@@ -78,7 +78,7 @@ const RearView = (() => {
 
   function draw(g, id, yaw, flame) {
     const L = LOOK[id];
-    const cx = 190, by = 352;
+    const cx = 190, by = 462;
     const o = (d) => cx + yaw * d * 46;
 
     ell(g, cx + yaw * 10, by - 6, 178, 18); g.fillStyle = 'rgba(0,0,0,.3)'; g.fill();
@@ -154,8 +154,8 @@ const RearView = (() => {
 
   // native size matches the sheet's kart frames (drawn at 2x, then scaled down for crisp outlines)
   function make(id, yaw, flame) {
-    const big = Art.mk(380, 380, (g) => draw(g, id, yaw, flame));
-    return Art.mk(190, 190, (g) => { g.imageSmoothingQuality = 'high'; g.drawImage(big, 0, 0, 190, 190); });
+    const big = Art.mk(380, 490, (g) => draw(g, id, yaw, flame));   // tall enough for long ears
+    return Art.mk(190, 245, (g) => { g.imageSmoothingQuality = 'high'; g.drawImage(big, 0, 0, 190, 245); });
   }
   return { make, has: (id) => !!LOOK[id] };
 })();

@@ -134,6 +134,73 @@
     }
   }
 
+  // ---------- Duo challenges ----------
+  const CHALLENGES = [
+    { id: 'race', name: 'RACE', note: 'first to the finish wins' },
+    { id: 'together', name: 'STAY TOGETHER', note: 'keep close the whole way' },
+    { id: 'coins', name: 'COIN RUSH', note: 'grab coins into one shared bank' },
+    { id: 'drift', name: 'DRIFT DUET', note: 'drift together for double points' },
+  ];
+  let chal = 'race';
+  const cs = { together: 0, side: 0, coins: 0, coinsTotal: 0, drift: 0, sync: 0, taken: new Set() };
+  let coinList = [], coinBySeg = null;
+  const isChal = () => chal !== 'race' && online;
+  function resetChallenge() {
+    cs.together = 0; cs.side = 0; cs.coins = 0; cs.drift = 0; cs.sync = 0; cs.taken = new Set();
+    me.driftSum = 0; other.driftSum = 0;
+    coinList = []; coinBySeg = null;
+    if (chal === 'coins' && online) {
+      // rows of coins across lanes, same on both sides (deterministic)
+      let k = 0;
+      for (let i = 30; i < T.N - 10; i += 14) {
+        const seg = T.segs[i];
+        if (seg.zone === 'tunnel' && i % 28) continue;
+        const pattern = [[-0.55], [0], [0.55], [-0.55, 0.55], [-0.3, 0.3], [0]][(i / 14) % 6 | 0];
+        for (const o of pattern) coinList.push({ id: k++, seg: i, o });
+      }
+      cs.coinsTotal = coinList.length * laps;
+      coinBySeg = new Map();
+      for (const c of coinList) { if (!coinBySeg.has(c.seg)) coinBySeg.set(c.seg, []); coinBySeg.get(c.seg).push(c); }
+    }
+  }
+  function challengeScore() {
+    const t = Math.max(1, (me.finished ? me.finishTime : performance.now() - raceStart) / 1000);
+    if (chal === 'together') return { val: Math.round((cs.together / t) * 100), unit: '% together', stars: [50, 70, 85] };
+    if (chal === 'coins') return { val: cs.coins, unit: ' coins of ' + cs.coinsTotal, stars: [0.4, 0.65, 0.85].map((f) => Math.round(cs.coinsTotal * f)) };
+    if (chal === 'drift') {
+      const total = (me.driftSum || 0) + (other.driftSum || 0) + cs.sync;
+      return { val: Math.round(total), unit: ' drift pts', stars: [0.25, 0.4, 0.55].map((f) => Math.round(t * f * 2)) };
+    }
+    return null;
+  }
+  const starsOf = (sc) => sc.stars.filter((x) => sc.val >= x).length;
+  function stepChallenge(dt, now) {
+    if (!isChal() || mode !== 'race' || !other.present) return;
+    const dz = Math.abs(other.total - me.total), dxw = Math.abs(other.x - me.x);
+    if (chal === 'together') {
+      if (dz < 1100) cs.together += dt;
+      if (dz < 450 && dxw < 0.9) { cs.together += dt * 0.25; cs.side += dt; }
+    }
+    if (chal === 'drift') {
+      if (me.drift) me.driftSum = (me.driftSum || 0) + dt;
+      if (me.drift && other.drift) cs.sync += dt;   // both drifting at once: bonus
+    }
+    if (chal === 'coins') {
+      const lapNo = Math.floor(Math.max(0, me.total - T.START_Z) / T.LENGTH);
+      const zHere = mod(me.total, T.LENGTH);
+      for (const c of coinList) {
+        const key = lapNo + ':' + c.id;
+        if (cs.taken.has(key)) continue;
+        const cz = c.seg * SEG;
+        if (Math.abs(cz - zHere) < 260 && Math.abs(c.o - me.x) < 0.3) {
+          cs.taken.add(key); cs.coins++;
+          Net.send({ t: 'coin', k: key });
+          sparkBurst(me.total + 200, c.o, '#ffd84a', 8);
+        }
+      }
+    }
+  }
+
   // ---------- Симуляция ----------
   const overlap = (x1, w1, x2, w2) => Math.abs(x1 - x2) < (w1 + w2) / 2;
 
@@ -307,6 +374,15 @@
         }
       }
       collideWithOther(now);
+      // slipstream: right behind your partner you get pulled along
+      if (online && other.present) {
+        const gap = other.total - me.total;
+        if (gap > 150 && gap < 1300 && Math.abs(other.x - me.x) < 0.35 && me.speed > MAX * 0.5) {
+          me.draftT = (me.draftT || 0) + dt;
+          if (me.draftT > 0.4) { me.speed += ACCEL * 0.6 * dt; if (me.speed > MAX * 1.08) me.speed = MAX * 1.08; }
+        } else me.draftT = 0;
+      }
+      stepChallenge(dt, now);
     }
 
     me.total += me.speed * dt;
@@ -358,7 +434,7 @@
   Net.on('connected', () => {
     online = true;
     Net.send({ t: 'hello', name: myName, char: myChar });
-    if (isHost) Net.send({ t: 'room', track: trackId, laps, diff });
+    if (isHost) { Net.send({ t: 'room', track: trackId, laps, diff }); Net.send({ t: 'chal', v: chal }); }
     Net.send({ t: 'where', v: mode === 'lobby' ? 'lobby' : 'race' });
     toast('Connected ♥');
   });
@@ -373,6 +449,8 @@
         break;
       case 'room': setDiff(m.diff, false); setTrack(m.track, false); setLaps(m.laps); renderLobby(); break;
       case 'diff': setDiff(m.v, false); resetReady(); break;
+      case 'chal': chal = m.v; renderModes(); resetReady(); break;
+      case 'coin': if (!cs.taken.has(m.k)) { cs.taken.add(m.k); cs.coins++; } break;
       case 'track': setTrack(m.id, false); trackBy = other.name; resetReady(); break;
       case 'laps': setLaps(m.n); resetReady(); break;
       case 'char':
@@ -380,8 +458,9 @@
         resetReady(); break;
       case 'ready': other.ready = !!m.v; renderLobby(); checkStart(); break;
       case 'where': other.where = m.v; if (m.v !== 'lobby') other.ready = false; renderLobby(); checkStart(); break;
-      case 'go': setLaps(m.laps || 3); setDiff(m.diff, false); setTrack(m.track || trackId, false); other.where = 'race'; startCountdown(); break;
+      case 'go': chal = m.chal || 'race'; setLaps(m.laps || 3); setDiff(m.diff, false); setTrack(m.track || trackId, false); other.where = 'race'; startCountdown(); break;
       case 's':
+        if (m.ds != null) other.driftSum = m.ds;
         other.snaps.push({ t: now, tot: m.tot, x: m.x, sp: m.sp, st: m.st, d: m.d || 0, b: m.b, h: m.h, j: m.j || 0 });
         if (other.snaps.length > 40) other.snaps.shift();
         break;
@@ -494,6 +573,22 @@
       }
     }
   }
+  function renderModes() {
+    const box = $('lobbyModes');
+    if (!box) return;
+    box.innerHTML = '';
+    for (const c of CHALLENGES) {
+      const b = document.createElement('button');
+      b.className = 'diff mode' + (c.id === chal ? ' sel' : '');
+      b.innerHTML = '<b></b><small></small>';
+      b.querySelector('b').textContent = c.name;
+      b.querySelector('small').textContent = c.note;
+      b.onclick = () => { if (c.id === chal) return; chal = c.id; renderModes(); if (online) Net.send({ t: 'chal', v: c.id }); resetReady(); };
+      box.appendChild(b);
+    }
+  }
+  renderModes();
+
   function setDiff(v, save) {
     diff = v === 'hard' ? 'hard' : 'easy';
     if (save) store.set('diff', diff);
@@ -628,7 +723,7 @@
   function checkStart() {
     if (!isHost || mode !== 'lobby' || !online || !other.present) return;
     if (myReady && other.ready && other.where === 'lobby') {
-      Net.send({ t: 'go', laps, track: trackId, diff });
+      Net.send({ t: 'go', laps, track: trackId, diff, chal });
       other.where = 'race';
       startCountdown();
     }
@@ -676,6 +771,8 @@
     if (other.present) placeOnGrid(other, isHost ? 1 : 0);
     other.snaps = []; other.finished = false; other.finishTime = 0;
     for (const k in pickedN) delete pickedN[k];
+    if (!online) chal = 'race';
+    resetChallenge();
     particles = []; lapTimes = []; banner = null; camXw = me.x;
     countdownEnd = performance.now() + 3000;
     updateNitroBtn();
@@ -711,6 +808,21 @@
     box.innerHTML = '';
     rows.forEach((r, i) => box.appendChild(playerRow((i === 0 && r.f ? '🏆 ' : '') + r.name, r.char, r.f ? fmt(r.t) : 'racing…', i === 0)));
     $('resultTitle').textContent = !online ? 'FINISH ' + fmt(me.finishTime) : rows[0].me ? 'YOU WIN!' : other.name + ' WINS!';
+    if (isChal()) {
+      const sc = challengeScore(), st = starsOf(sc);
+      const done = other.finished;
+      $('resultTitle').textContent = (CHALLENGES.find((c) => c.id === chal) || {}).name + '  ' + '★'.repeat(st) + '☆'.repeat(3 - st);
+      box.innerHTML = '';
+      const row = document.createElement('div');
+      row.className = 'teamscore';
+      row.innerHTML = '<div class="big"></div><div class="small"></div>';
+      row.querySelector('.big').textContent = sc.val + sc.unit;
+      row.querySelector('.small').textContent = 'Team goal: ★ ' + sc.stars[0] + '  ★★ ' + sc.stars[1] + '  ★★★ ' + sc.stars[2] + (done ? '' : '  (partner still driving…)');
+      box.appendChild(row);
+      rows.forEach((r) => box.appendChild(playerRow(r.name, r.char, r.f ? fmt(r.t) : 'driving…', false)));
+      $('resultNote').textContent = st === 3 ? 'Perfect teamwork!' : st === 2 ? 'Great team! One more star to go.' : st === 1 ? 'Nice start — try again together!' : 'So close — go again!';
+      return;
+    }
     const best = Math.min(...lapTimes);
     $('resultNote').textContent = (lapTimes.length ? 'Best lap: ' + fmt(best) + '. ' : '') +
       (online && !other.finished ? other.name + ' is still racing — cheer with an emoji!' : '');
@@ -1048,6 +1160,20 @@
         if (p2.y < p1.y) drawSegment(seg);
         const alpha = clamp(seg.fog * 1.6, 0, 1);
         for (const s of seg.sprites) if (s.def.decal) drawDecal(s, seg, alpha);
+        if (coinBySeg && coinBySeg.has(seg.index)) {
+          const lapNo = Math.floor(Math.max(0, me.total - T.START_Z) / T.LENGTH);
+          const ahead = seg.p1.world.z + 260 < mod(me.total, T.LENGTH) ? 1 : 0;
+          for (const c of coinBySeg.get(seg.index)) {
+            if (cs.taken.has(lapNo + ahead + ':' + c.id)) continue;
+            const spin = Math.max(0.2, Math.abs(Math.cos(now / 220 + c.id)));
+            const sc = p1.scale, w = Art.S.coin.w * sc * SX;
+            if (w < 1) continue;
+            const cx = p1.x + sc * c.o * ROAD * SX, top = p1.y - w - (180 + Math.sin(now / 200 + c.id) * 40) * sc * SX;
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(Art.S.coin.img, cx - (w * spin) / 2, top, w * spin, w);
+            ctx.globalAlpha = 1;
+          }
+        }
         const tooClose = seg.p1.camera.z < PLAYER_Z * 0.75;   // objects between camera and kart would block the view
         for (const s of seg.sprites) {
           if (s.def.decal) continue;
@@ -1071,6 +1197,7 @@
           const wy = lerp(seg.p1.world.y, seg.p2.world.y, pct);
           const cxw = lerp(seg.p1.camera.x, seg.p2.camera.x, pct);
           if (o.car) {
+            if (o.car !== me && d < PLAYER_Z * 0.6) continue;   // partner right behind the camera: shown as a marker instead
             drawKartAt(o.car, W / 2 + sc * (cxw + o.car.x * ROAD) * SX, HORIZON - sc * (wy - camY) * SX, sc, now, o.car === me);
           } else {
             const p = o.p;
@@ -1169,7 +1296,7 @@
     // соперник вне кадра
     if (online && other.present) {
       const d = other.total - me.total, m = Math.round(d / 40);
-      if (other.total - camZ <= 60) text('▼ ' + other.name + ' ' + m + 'm', W / 2, H - 14, 8, '#ffb0c8', 'center');
+      if (other.total - camZ <= PLAYER_Z * 0.6) text('▼ ' + other.name + ' ' + m + 'm', W / 2, H - 14, 8, '#ffb0c8', 'center');
       else if (other.total - camZ >= DRAW * SEG - SEG) text('▲ ' + other.name + ' +' + m + 'm', W / 2, HORIZON - 14, 8, '#ffb0c8', 'center');
     }
 
@@ -1187,6 +1314,24 @@
       ctx.restore();
       ctx.globalAlpha = 1;
     }
+    if (isChal() && (mode === 'race' || mode === 'done')) {
+      const sc = challengeScore(), name = (CHALLENGES.find((c) => c.id === chal) || {}).name;
+      const pw = Math.min(170, W * 0.42), px = W / 2 - pw / 2, py = 30;
+      ctx.fillStyle = 'rgba(10,8,30,.6)'; ctx.fillRect(px, py, pw, 30);
+      text(name, W / 2, py + 3, 8, '#ffd84a', 'center');
+      const fill = Math.min(1, sc.val / sc.stars[2]);
+      ctx.fillStyle = '#2a2a3a'; ctx.fillRect(px + 6, py + 15, pw - 12, 8);
+      ctx.fillStyle = chal === 'coins' ? '#ffc928' : chal === 'drift' ? '#ff9a2a' : '#7cff9a'; ctx.fillRect(px + 6, py + 15, (pw - 12) * fill, 8);
+      for (const st of sc.stars) { ctx.fillStyle = '#fff'; ctx.fillRect(px + 6 + (pw - 12) * Math.min(1, st / sc.stars[2]) - 1, py + 13, 1, 12); }
+      text(String(sc.val), px + pw - 4, py + 3, 8, '#fff', 'right');
+      if (chal === 'together' && other.present) {
+        const dz = Math.abs(other.total - me.total);
+        if (dz >= 1100) text('GET CLOSER!', W / 2, py + 36, 8, '#ff8a8a', 'center');
+        else if (dz < 450 && Math.abs(other.x - me.x) < 0.9) text('SIDE BY SIDE +', W / 2, py + 36, 8, '#7cff9a', 'center');
+      }
+      if (chal === 'drift' && me.drift && other.drift) text('SYNC DRIFT x2', W / 2, py + 36, 8, '#ff9a2a', 'center');
+    }
+    if ((me.draftT || 0) > 0.4 && mode === 'race') text('SLIPSTREAM', W / 2, H - 26, 8, '#9fd6ff', 'center');
     if (banner) {
       const k = (now - banner.t0) / banner.ms;
       if (k > 1) banner = null;
@@ -1240,7 +1385,7 @@
 
     if (online && inGame() && now - lastSend > 50) {
       lastSend = now;
-      Net.send({ t: 's', tot: Math.round(me.total), x: Math.round(me.x * 1000) / 1000, sp: Math.round(me.speed),
+      Net.send({ t: 's', ds: Math.round((me.driftSum || 0) * 10) / 10, tot: Math.round(me.total), x: Math.round(me.x * 1000) / 1000, sp: Math.round(me.speed),
         st: Math.round((me.yaw || 0) * 100) / 100, d: me.drift ? me.drift * (me.driftT > 1.5 ? 3 : me.driftT > 0.7 ? 2 : 1) : 0, b: now < me.boostUntil, h: now < me.hitUntil, j: Math.round(me.airH || 0) });
     }
     if (online) updateRemote(now);

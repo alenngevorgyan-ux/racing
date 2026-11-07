@@ -149,3 +149,9 @@ button.ghost { background: transparent; border-color: transparent; box-shadow: n
 .diffs .diff small { font-family: -apple-system, sans-serif; font-size: 11px; color: var(--dim); }
 .diffs .diff.easy.sel { border-color: #4fd17a; color: #7cff9a; background: #10261c; }
 .diffs .diff.hard.sel { border-color: #ff4a4a; color: #ff8a8a; background: #2a1014; }
+.modes { grid-template-columns: 1fr 1fr; }
+.modes .mode b { font-size: 9px; }
+.modes .mode.sel { border-color: var(--gold); color: var(--gold); background: #231a4a; }
+.teamscore { text-align: center; padding: 10px; background: #0b0820; border: 2px solid var(--gold); border-radius: 3px; }
+.teamscore .big { font-family: var(--px); font-size: 14px; color: var(--gold); margin-bottom: 8px; }
+.teamscore .small { font-size: 12px; color: var(--dim); }

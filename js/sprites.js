@@ -514,6 +514,12 @@ const Art = (() => {
     poly(g, [[100, 110], [80, 160], [100, 156], [86, 200], [130, 140], [108, 144], [122, 110]]); g.fillStyle = '#ffe14a'; g.fill();
     ell(g, 86, 76, 6, 7); g.fillStyle = '#fff'; g.fill(); ell(g, 120, 76, 6, 7); g.fill();
   }) };
+  S.coin = { w: 380, img: art(120, 120, (g) => {
+    ell(g, 60, 60, 54, 54); paint(g, sg(g, 60, 60, 54, '#ffc928'), '#a87a10', 4);
+    ell(g, 60, 60, 38, 38); g.lineWidth = 4; g.strokeStyle = '#e09a10'; g.stroke();
+    star(g, 60, 62, 24); g.fillStyle = '#fff2a8'; g.fill();
+    ell(g, 40, 38, 10, 16, 0.6); g.fillStyle = 'rgba(255,255,255,.6)'; g.fill();
+  }, 8) };
   S.skyRail = { w: 1400, img: art(240, 120, (g) => {
     for (const x of [16, 216]) { rr(g, x, 20, 16, 100, 4); paint(g, hg(g, x, x + 16, '#f4f0ff'), '#a8a0c8'); }
     rr(g, 0, 26, 240, 16, 6); paint(g, vg(g, 26, 42, '#ffd84a'), '#a8801a');
