@@ -143,3 +143,9 @@ button.ghost { background: transparent; border-color: transparent; box-shadow: n
 .chars.small .char img { aspect-ratio: 1 / 1; }
 .who { color: var(--gold); font-size: 8px; }
 #readyBtn.waiting { background: linear-gradient(#58c27a, #2f8a50); color: #fff; }
+.diffs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.diffs .diff { display: flex; flex-direction: column; gap: 4px; align-items: center; background: #0b0820; border: 2px solid #2a2160; box-shadow: none; }
+.diffs .diff b { font-size: 11px; }
+.diffs .diff small { font-family: -apple-system, sans-serif; font-size: 11px; color: var(--dim); }
+.diffs .diff.easy.sel { border-color: #4fd17a; color: #7cff9a; background: #10261c; }
+.diffs .diff.hard.sel { border-color: #ff4a4a; color: #ff8a8a; background: #2a1014; }

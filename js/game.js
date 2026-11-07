@@ -30,7 +30,8 @@
   if (!Chars.LIST.some((c) => c.id === myChar)) myChar = Chars.LIST[0].id;
   let trackId = store.get('track', Tracks.list[0].id);
   if (!Tracks.list.some((t) => t.id === trackId)) trackId = Tracks.list[0].id;
-  let T = Tracks.get(trackId);
+  let diff = store.get('diff', 'easy') === 'hard' ? 'hard' : 'easy';
+  let T = Tracks.get(trackId, diff);
 
   // ---------- Состояние ----------
   let mode = 'menu';
@@ -47,17 +48,17 @@
 
   function placeOnGrid(car, slot) {
     car.total = 0; car.x = slot === 0 ? -0.45 : 0.45;
-    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0;
+    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0; car.yaw = 0; car.drift = 0; car.driftT = 0;
     car.finished = false; car.finishTime = 0;
   }
 
   // ---------- Ввод ----------
   const keys = {};
-  const touch = { up: false, down: false, left: false, right: false };
+  const touch = { up: false, down: false, left: false, right: false, drift: false };
   const typing = () => ['INPUT', 'SELECT'].includes(document.activeElement && document.activeElement.tagName);
   addEventListener('keydown', (e) => {
     if (typing()) return;
-    if (!keys[e.code] && ['ShiftLeft', 'ShiftRight', 'KeyE', 'KeyN', 'KeyX'].includes(e.code)) useNitro(performance.now());
+    if (!keys[e.code] && ['ShiftLeft', 'ShiftRight', 'KeyE', 'KeyN'].includes(e.code)) useNitro(performance.now());
     keys[e.code] = true;
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     const emo = { Digit1: '❤️', Digit2: '😘', Digit3: '😂', Digit4: '😤' }[e.code];
@@ -67,9 +68,10 @@
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
   const input = () => ({
     up: keys.ArrowUp || keys.KeyW || touch.up,
-    down: keys.ArrowDown || keys.KeyS || keys.Space || touch.down,
+    down: keys.ArrowDown || keys.KeyS || touch.down,
     left: keys.ArrowLeft || keys.KeyA || touch.left,
     right: keys.ArrowRight || keys.KeyD || touch.right,
+    drift: keys.Space || keys.KeyZ || touch.drift,
   });
   function bindTouch(id, key) {
     const el = $(id);
@@ -78,7 +80,7 @@
     el.addEventListener('pointerdown', on);
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, off);
   }
-  bindTouch('tGas', 'up'); bindTouch('tBrake', 'down'); bindTouch('tLeft', 'left'); bindTouch('tRight', 'right');
+  bindTouch('tGas', 'up'); bindTouch('tBrake', 'down'); bindTouch('tLeft', 'left'); bindTouch('tRight', 'right'); bindTouch('tDrift', 'drift');
   $('tNitro').addEventListener('pointerdown', (e) => { e.preventDefault(); useNitro(performance.now()); });
   const isTouch = matchMedia('(pointer: coarse)').matches;
   document.querySelectorAll('#emotes button').forEach((b) => b.addEventListener('click', () => sendEmote(b.dataset.emo)));
@@ -108,6 +110,9 @@
       if (boost && Math.random() < 0.9 * rate) {
         spawn(car.total - 20, car.x + s * 0.055, { y: 70, vz: car.speed * 0.6, vx: (Math.random() - 0.5) * 0.3, vy: 40 + Math.random() * 60, size: 60, grow: -40, life: 0.28, max: 0.28, a: 0.95, color: Math.random() < 0.5 ? '#7cc4ff' : '#e4f4ff', add: true });
       }
+    }
+    if (car.drift && sp > 0.3 && Math.random() < 0.5 * rate) {
+      spawn(car.total - 50, car.x + (Math.random() - 0.5) * 0.3, { vz: car.speed * 0.6, vy: 120, size: 90, grow: 260, life: 0.6, max: 0.6, a: 0.35, color: '#d8d8e0' });
     }
     if ((isMe ? now < car.hitUntil : car.hit) && Math.random() < 0.5 * rate) {
       spawn(car.total - 30, car.x + (Math.random() - 0.5) * 0.3, { y: 120, vz: car.speed * 0.5, vy: 160, size: 120, grow: 300, life: 0.9, max: 0.9, a: 0.5, color: '#9a9aa2' });
@@ -183,19 +188,33 @@
       }
     }
 
-    me.steer = inp.left ? -1 : inp.right ? 1 : 0;
-    const dx = dt * 2.1 * Math.min(1, sp * 1.2 + 0.1);
-    if (spinning) {
-      me.x += Math.sin(now / 70) * dt * 0.9;
-      me.steer = Math.sin(now / 90) > 0 ? 1 : -1;      // кадры заноса туда-сюда
-    } else if (zone === 'ice' && !air) {
-      // на льду руль работает с запаздыванием — машину несёт
-      me.sv = lerp(me.sv || 0, me.steer * 2.1 * Math.min(1, sp * 1.2 + 0.1), 1 - Math.exp(-1.4 * dt));
-      me.x += me.sv * dt;
-    } else if (!hitNow && !air) {
-      me.x += me.steer * dx; me.sv = me.steer * 2.1 * Math.min(1, sp * 1.2 + 0.1);
+    const wm = lerp(seg.p1.wm || 1, seg.p2.wm || 1, mod(me.total, SEG) / SEG);
+    const steerIn = inp.left ? -1 : inp.right ? 1 : 0;
+    me.steer = steerIn;
+    const grip = Math.min(1, sp * 1.2 + 0.1);
+    // drift: hold DRIFT + steer at speed -> small hop, then slide; longer drift = bigger mini-turbo
+    if (mode === 'race' && !me.drift && inp.drift && steerIn && sp > 0.35 && !air && !spinning) {
+      me.drift = steerIn; me.driftT = 0; me.airMax = me.air = 0.16;
     }
-    if (!air) me.x -= dx * sp * seg.curve * CENTRIFUGAL * (zone === 'ice' ? 1.8 : 1);
+    if (me.drift && (!inp.drift || sp < 0.25 || spinning || hitNow)) {
+      if (!spinning && !hitNow && me.driftT > 1.5) { me.boostUntil = Math.max(me.boostUntil, now + 1100); flash = Math.max(flash, 0.3); showBanner('SUPER TURBO!', '#ff9a2a', 700); }
+      else if (!spinning && !hitNow && me.driftT > 0.7) { me.boostUntil = Math.max(me.boostUntil, now + 600); flash = Math.max(flash, 0.2); showBanner('TURBO!', '#7cc4ff', 600); }
+      me.drift = 0; me.driftT = 0;
+    }
+    // yaw = how much the kart is turned; it builds up over ~0.3s instead of snapping
+    let target, rate;
+    if (spinning) { target = Math.sin(now / 90); rate = 12; me.x += Math.sin(now / 70) * dt * 0.9; }
+    else if (me.drift) { me.driftT += dt; target = me.drift * (0.8 + 0.3 * steerIn * me.drift); rate = 6; }
+    else { target = hitNow ? 0 : steerIn * 0.9; rate = zone === 'ice' ? 1.4 : Math.abs(target) > Math.abs(me.yaw || 0) ? 2.6 : 4.5; }
+    me.yaw = lerp(me.yaw || 0, target, 1 - Math.exp(-rate * dt));
+    if (!air) {
+      // sideways movement follows the kart's heading, scaled by speed
+      const latTarget = me.drift ? (me.yaw * 0.75 + me.drift * 0.15) * grip : me.yaw * 2.2 * grip;
+      me.sv = zone === 'ice' ? lerp(me.sv || 0, latTarget, 1 - Math.exp(-1.5 * dt)) : latTarget;
+      me.x += me.sv * dt;
+      me.x -= dt * 2.1 * grip * sp * seg.curve * CENTRIFUGAL * (zone === 'ice' ? 1.8 : me.drift ? 0.55 : 1);
+      if (me.drift) me.speed *= 1 - 0.12 * dt;
+    }
 
     const boosting = now < me.boostUntil;
     const maxS = MAX * (boosting ? 1.4 : 1);
@@ -206,23 +225,25 @@
       if (boosting && !inp.down) me.speed += ACCEL * 1.5 * dt;
     } else me.speed = 0;
 
-    if (!air && zone !== 'tunnel' && zone !== 'bridge' && (me.x < -1 || me.x > 1) && me.speed > OFF_LIMIT && !boosting) me.speed += OFF_DECEL * dt;
+    if (!air && zone !== 'tunnel' && zone !== 'bridge' && Math.abs(me.x) > wm && me.speed > OFF_LIMIT && !boosting) me.speed += OFF_DECEL * dt;
     if (me.speed > maxS) me.speed += (maxS - me.speed) * Math.min(1, 1.5 * dt);
     me.speed = clamp(me.speed, 0, MAX * 1.4);
     me.x = clamp(me.x, -2.6, 2.6);
 
     // стены туннеля
-    if (zone === 'tunnel' && Math.abs(me.x) > 0.98) {
-      me.x = Math.sign(me.x) * 0.98;
+    if (zone === 'tunnel' && Math.abs(me.x) > 0.98 * wm) {
+      me.x = Math.sign(me.x) * 0.98 * wm;
       me.speed *= 1 - 2.5 * dt;
       shake = Math.max(shake, 0.12);
       if (Math.random() < 0.5) spawn(me.total, me.x, { y: 120, vz: me.speed * 0.7, vx: -Math.sign(me.x) * 0.5, vy: 200, size: 40, grow: -20, life: 0.3, max: 0.3, a: 1, color: '#ffd27a', add: true });
     }
-    // мост: съехал — плюх в воду
-    if (mode === 'race' && zone === 'bridge' && !air && Math.abs(me.x) > 1.08) {
-      for (let i = 0; i < 24; i++) spawn(me.total, me.x + (Math.random() - 0.5) * 0.4, { y: 0, vz: me.speed * 0.3, vx: (Math.random() - 0.5) * 1.2, vy: 500 + Math.random() * 700, size: 90, grow: 120, life: 0.9, max: 0.9, a: 0.9, color: Math.random() < 0.5 ? '#ffffff' : '#8fd0ff' });
-      me.x = 0; me.speed *= 0.3; me.hitUntil = now + 900; shake = 0.4;
-      showBanner('ПЛЮХ!', '#8fd0ff', 1000);
+    // fell off the edge: water under a bridge, lava, or the sky road
+    const deadly = zone === 'bridge' || zone === 'lava' || (T.def.fallOff && zone !== 'tunnel');
+    if (mode === 'race' && deadly && !air && Math.abs(me.x) > 1.08 * wm) {
+      const fx = zone === 'lava' ? ['#ffb040', '#ff5a1a', 'TOO HOT!'] : zone === 'bridge' ? ['#ffffff', '#8fd0ff', 'SPLASH!'] : ['#ffffff', '#dfe8ff', 'FELL OFF!'];
+      for (let i = 0; i < 24; i++) spawn(me.total, me.x + (Math.random() - 0.5) * 0.4, { y: 0, vz: me.speed * 0.3, vx: (Math.random() - 0.5) * 1.2, vy: 500 + Math.random() * 700, size: 90, grow: 120, life: 0.9, max: 0.9, a: 0.9, color: fx[Math.random() < 0.5 ? 0 : 1], add: zone === 'lava' });
+      me.x = 0; me.speed *= 0.3; me.hitUntil = now + 900; me.drift = 0; shake = 0.4;
+      showBanner(fx[2], fx[1], 1000);
     }
 
     if (mode === 'race' && !air) {
@@ -235,7 +256,7 @@
             me.nitro++;
             updateNitroBtn();
             sparkBurst(me.total + 300, o, '#bfe4ff');
-            showBanner('+НИТРО', '#7cc4ff', 900);
+            showBanner('+NITRO', '#7cc4ff', 900);
           }
           continue;
         }
@@ -248,14 +269,14 @@
         if (d.slip) {
           if (!spinning && overlap(me.x, KART_U, o, (d.w / ROAD) * 0.8)) {
             me.spinUntil = now + 950; me.speed *= 0.72; shake = Math.max(shake, 0.2);
-            showBanner('ЗАНОС!', d === Art.S.oil ? '#c8a8ff' : '#d9a066', 800);
+            showBanner('SPIN OUT!', d === Art.S.oil ? '#c8a8ff' : '#d9a066', 800);
           }
           continue;
         }
         if (d.ramp) {
           if (overlap(me.x, KART_U, o, (d.w / ROAD) * 0.9) && me.speed > MAX * 0.25) {
             me.airMax = me.air = 0.45 + 0.55 * (me.speed / MAX);
-            showBanner('ПРЫЖОК!', '#ffd84a', 700);
+            showBanner('JUMP!', '#ffd84a', 700);
           }
           continue;
         }
@@ -275,7 +296,7 @@
       const lap = Math.floor((me.total - T.START_Z) / T.LENGTH);
       if (lap > lapTimes.length && lap >= 1) {
         lapTimes.push(now - lapStart); lapStart = now;
-        if (lap < laps) showBanner(lap === laps - 1 ? 'ПОСЛЕДНИЙ КРУГ' : 'КРУГ ' + (lap + 1), '#ffd84a', 1600);
+        if (lap < laps) showBanner(lap === laps - 1 ? 'FINAL LAP' : 'LAP ' + (lap + 1), '#ffd84a', 1600);
       }
       if (me.total - T.START_Z >= laps * T.LENGTH) finish(now);
     }
@@ -310,7 +331,7 @@
       other.total = cur.tot + cur.sp * (clamp(rt - cur.t, 0, 250) / 1000);
       other.x = cur.x; other.airH = cur.j;
     }
-    other.speed = cur.sp; other.steer = cur.st; other.boost = cur.b; other.hit = cur.h;
+    other.speed = cur.sp; other.yaw = cur.st; other.drift = Math.sign(cur.d); other.driftT = [0, 0.4, 1, 2][Math.abs(cur.d)] || 0; other.boost = cur.b; other.hit = cur.h;
   }
 
   // ---------- Сеть ----------
@@ -318,20 +339,21 @@
   Net.on('connected', () => {
     online = true;
     Net.send({ t: 'hello', name: myName, char: myChar });
-    if (isHost) Net.send({ t: 'room', track: trackId, laps });
+    if (isHost) Net.send({ t: 'room', track: trackId, laps, diff });
     Net.send({ t: 'where', v: mode === 'lobby' ? 'lobby' : 'race' });
-    toast('Соединение есть ♥');
+    toast('Connected ♥');
   });
   Net.on('message', (m) => {
     const now = performance.now();
     switch (m.t) {
       case 'hello':
-        other.name = String(m.name || 'Гость').slice(0, 14);
+        other.name = String(m.name || 'Guest').slice(0, 14);
         other.char = Chars.LIST.some((c) => c.id === m.char) ? m.char : Chars.LIST[1].id;
         other.present = true;
         renderLobby();
         break;
-      case 'room': setTrack(m.track, false); setLaps(m.laps); renderLobby(); break;
+      case 'room': setDiff(m.diff, false); setTrack(m.track, false); setLaps(m.laps); renderLobby(); break;
+      case 'diff': setDiff(m.v, false); resetReady(); break;
       case 'track': setTrack(m.id, false); trackBy = other.name; resetReady(); break;
       case 'laps': setLaps(m.n); resetReady(); break;
       case 'char':
@@ -339,28 +361,28 @@
         resetReady(); break;
       case 'ready': other.ready = !!m.v; renderLobby(); checkStart(); break;
       case 'where': other.where = m.v; if (m.v !== 'lobby') other.ready = false; renderLobby(); checkStart(); break;
-      case 'go': setLaps(m.laps || 3); setTrack(m.track || trackId, false); other.where = 'race'; startCountdown(); break;
+      case 'go': setLaps(m.laps || 3); setDiff(m.diff, false); setTrack(m.track || trackId, false); other.where = 'race'; startCountdown(); break;
       case 's':
-        other.snaps.push({ t: now, tot: m.tot, x: m.x, sp: m.sp, st: m.st, b: m.b, h: m.h, j: m.j || 0 });
+        other.snaps.push({ t: now, tot: m.tot, x: m.x, sp: m.sp, st: m.st, d: m.d || 0, b: m.b, h: m.h, j: m.j || 0 });
         if (other.snaps.length > 40) other.snaps.shift();
         break;
       case 'fin':
         other.finished = true; other.finishTime = m.time;
-        if (mode === 'race') toast(other.name + ' уже на финише!');
+        if (mode === 'race') toast(other.name + ' has finished!');
         if (mode === 'done') renderResult();
         break;
       case 'emo': other.emo = { e: m.e, until: now + 2200 }; break;
-      case 'full': toast('В комнате уже двое 😅'); goMenu(); break;
+      case 'full': toast('The room is full 😅'); goMenu(); break;
     }
   });
-  Net.on('closed', () => { if (mode !== 'menu') { toast('Соединение потеряно 💔'); goMenu(); } });
+  Net.on('closed', () => { if (mode !== 'menu') { toast('Connection lost 💔'); goMenu(); } });
   Net.on('error', (e) => {
     const msg = {
-      'peer-unavailable': 'Комната не найдена. Проверь код или попроси новую ссылку.',
-      'network': 'Нет связи с сервером. Проверь интернет.',
-      'server-error': 'Сервер соединения недоступен, попробуй ещё раз.',
-      'browser-incompatible': 'Этот браузер не поддерживает WebRTC.',
-    }[e && e.type] || ('Ошибка соединения: ' + ((e && (e.type || e.message)) || e));
+      'peer-unavailable': 'Room not found. Check the code or ask for a new link.',
+      'network': 'No connection to the server. Check your internet.',
+      'server-error': 'Connection server is unavailable, try again.',
+      'browser-incompatible': 'This browser does not support WebRTC.',
+    }[e && e.type] || ('Connection error: ' + ((e && (e.type || e.message)) || e));
     toast(msg);
     if (mode === 'lobby' && !Net.connected()) goMenu();
   });
@@ -434,9 +456,36 @@
       }
     }
   }
+  function renderDiffs() {
+    for (const boxId of ['diffs', 'lobbyDiffs']) {
+      const box = $(boxId);
+      box.innerHTML = '';
+      for (const [v, label, note] of [['easy', 'EASY', 'relaxed ride'], ['hard', 'HARD', 'more obstacles, narrow roads']]) {
+        const b = document.createElement('button');
+        b.className = 'diff ' + v + (v === diff ? ' sel' : '');
+        b.innerHTML = '<b></b><small></small>';
+        b.querySelector('b').textContent = label;
+        b.querySelector('small').textContent = note;
+        b.onclick = () => {
+          if (v === diff) return;
+          setDiff(v, true);
+          if (boxId === 'lobbyDiffs') { if (online) Net.send({ t: 'diff', v }); resetReady(); }
+        };
+        box.appendChild(b);
+      }
+    }
+  }
+  function setDiff(v, save) {
+    diff = v === 'hard' ? 'hard' : 'easy';
+    if (save) store.set('diff', diff);
+    T = Tracks.get(trackId, diff);
+    renderDiffs();
+  }
+  renderDiffs();
+
   function setTrack(id, save) {
     if (!Tracks.list.some((t) => t.id === id)) return;
-    trackId = id; T = Tracks.get(id);
+    trackId = id; T = Tracks.get(id, diff);
     if (save) store.set('track', id);
     renderTracks();
   }
@@ -451,10 +500,10 @@
   const inviteCode = (params.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (inviteCode) { show('joinBlock', true); show('hostBlock', false); show('trackBlock', false); $('inviteCode').textContent = inviteCode; }
 
-  const peerReady = () => { if (typeof Peer === 'undefined') { toast('Не загрузилась библиотека соединения. Обнови страницу.'); return false; } return true; };
+  const peerReady = () => { if (typeof Peer === 'undefined') { toast('Network library failed to load. Reload the page.'); return false; } return true; };
 
   function joinRoom(code) {
-    if (!code) return toast('Введи код комнаты');
+    if (!code) return toast('Enter a room code');
     if (!peerReady()) return;
     ensureName(); isHost = false; resetOther();
     goLobby(code, false);
@@ -466,8 +515,8 @@
   $('hostBtn').onclick = () => {
     if (!peerReady()) return;
     ensureName(); isHost = true; resetOther();
-    $('hostBtn').disabled = true; $('hostBtn').textContent = 'Создаём…';
-    Net.host((code) => { $('hostBtn').disabled = false; $('hostBtn').textContent = 'Создать комнату'; goLobby(code, true); });
+    $('hostBtn').disabled = true; $('hostBtn').textContent = 'Creating…';
+    Net.host((code) => { $('hostBtn').disabled = false; $('hostBtn').textContent = 'Create room'; goLobby(code, true); });
   };
   $('soloBtn').onclick = () => { ensureName(); Net.destroy(); resetOther(); isHost = true; laps = 3; startCountdown(); };
 
@@ -487,6 +536,7 @@
     $('shareLink').value = location.origin + location.pathname + '?room=' + roomCode;
     if (online) { Net.send({ t: 'where', v: 'lobby' }); Net.send({ t: 'ready', v: false }); }
     renderTracks();
+    renderDiffs();
     renderLobby();
   }
 
@@ -506,7 +556,7 @@
     c.innerHTML = '<img alt=""><div class="nm"></div><div class="badge"></div>';
     if (charId) c.querySelector('img').src = portraitSrc(charId); else c.querySelector('img').remove();
     c.querySelector('.nm').textContent = name;
-    c.querySelector('.badge').textContent = ready ? 'ГОТОВ ✓' : note;
+    c.querySelector('.badge').textContent = ready ? 'READY ✓' : note;
     return c;
   }
 
@@ -540,26 +590,26 @@
     if (mode !== 'lobby') return;
     const box = $('players');
     box.innerHTML = '';
-    box.appendChild(pcard(me.name + ' (ты)', me.char, myReady, 'выбирает…'));
-    if (other.present) box.appendChild(pcard(other.name, other.char, other.ready, other.where && other.where !== 'lobby' ? 'смотрит результаты…' : 'выбирает…'));
-    else box.appendChild(pcard(isHost ? 'Ждём…' : 'Подключаемся…', null, false, isHost ? 'отправь ссылку ↑' : ''));
+    box.appendChild(pcard(me.name + ' (you)', me.char, myReady, 'choosing…'));
+    if (other.present) box.appendChild(pcard(other.name, other.char, other.ready, other.where && other.where !== 'lobby' ? 'viewing results…' : 'choosing…'));
+    else box.appendChild(pcard(isHost ? 'Waiting…' : 'Connecting…', null, false, isHost ? 'send the link ↑' : ''));
     renderLobbyChars();
-    $('trackWho').textContent = trackBy ? '· выбрал(а) ' + trackBy : '';
+    $('trackWho').textContent = trackBy ? '· picked by ' + trackBy : '';
     const rb = $('readyBtn');
     rb.disabled = !other.present;
-    rb.textContent = myReady ? 'ЖДЁМ… (ОТМЕНА)' : 'Я ГОТОВ!';
+    rb.textContent = myReady ? 'WAITING… (CANCEL)' : 'READY!';
     rb.classList.toggle('waiting', myReady);
-    $('lobbyStatus').textContent = !other.present ? (isHost ? 'Отправь ссылку второму игроку' : 'Подключаемся к комнате…')
-      : myReady && other.ready ? 'Поехали!'
-      : myReady ? 'Ждём, когда ' + other.name + ' нажмёт «Готов»'
-      : other.ready ? other.name + ' готов(а)! Жми «Я готов»'
-      : 'Выберите гонщиков и трассу, потом оба жмите «Я готов»';
+    $('lobbyStatus').textContent = !other.present ? (isHost ? 'Send the link to your partner' : 'Connecting to the room…')
+      : myReady && other.ready ? 'Let\'s go!'
+      : myReady ? 'Waiting for ' + other.name + ' to press READY'
+      : other.ready ? other.name + ' is ready! Press READY'
+      : 'Pick racers, track and mode, then both press READY';
   }
 
   function checkStart() {
     if (!isHost || mode !== 'lobby' || !online || !other.present) return;
     if (myReady && other.ready && other.where === 'lobby') {
-      Net.send({ t: 'go', laps, track: trackId });
+      Net.send({ t: 'go', laps, track: trackId, diff });
       other.where = 'race';
       startCountdown();
     }
@@ -568,7 +618,7 @@
   $('copyBtn').onclick = async () => {
     const v = $('shareLink').value;
     try { await navigator.clipboard.writeText(v); } catch (_) { $('shareLink').select(); document.execCommand('copy'); }
-    toast('Ссылка скопирована');
+    toast('Link copied');
   };
   $('readyBtn').onclick = () => {
     myReady = !myReady;
@@ -585,7 +635,7 @@
   $('menuBtn').onclick = goMenu;
   $('againBtn').onclick = () => {
     if (online) {
-      if (!Net.connected()) { toast('Соединение потеряно'); return goMenu(); }
+      if (!Net.connected()) { toast('Connection lost'); return goMenu(); }
       return goLobby(roomCode, isHost);
     }
     startCountdown();
@@ -596,7 +646,7 @@
     online = false; other.present = false; mode = 'menu';
     show('menu', true); show('lobby', false); show('result', false);
     for (const id of ['emotes', 'touch']) show(id, false);
-    $('hostBtn').disabled = false; $('hostBtn').textContent = 'Создать комнату';
+    $('hostBtn').disabled = false; $('hostBtn').textContent = 'Create room';
     renderTracks();
   }
 
@@ -621,7 +671,7 @@
     if (online) { Net.send({ t: 'fin', time: me.finishTime }); Net.send({ t: 'where', v: 'result' }); }
     mode = 'done';
     show('touch', false);
-    showBanner('ФИНИШ!', '#ffffff', 1800);
+    showBanner('FINISH!', '#ffffff', 1800);
     setTimeout(renderResult, 900);
   }
 
@@ -633,18 +683,18 @@
   function renderResult() {
     if (mode !== 'done') return;
     show('result', true);
-    $('againBtn').textContent = online ? 'В КОМНАТУ' : 'ЕЩЁ РАЗ!';
-    $('menuBtn').textContent = online ? 'Выйти из комнаты' : 'В меню';
-    const rows = [{ name: me.name + ' (ты)', char: me.char, t: me.finishTime, f: true, me: true }];
+    $('againBtn').textContent = online ? 'BACK TO ROOM' : 'AGAIN!';
+    $('menuBtn').textContent = online ? 'Leave room' : 'Menu';
+    const rows = [{ name: me.name + ' (you)', char: me.char, t: me.finishTime, f: true, me: true }];
     if (online) rows.push({ name: other.name, char: other.char, t: other.finishTime, f: other.finished });
     rows.sort((a, b) => (a.f === b.f ? a.t - b.t : a.f ? -1 : 1));
     const box = $('resultTable');
     box.innerHTML = '';
-    rows.forEach((r, i) => box.appendChild(playerRow((i === 0 && r.f ? '🏆 ' : '') + r.name, r.char, r.f ? fmt(r.t) : 'в пути…', i === 0)));
-    $('resultTitle').textContent = !online ? 'ФИНИШ ' + fmt(me.finishTime) : rows[0].me ? 'ПОБЕДА!' : '1 место — ' + other.name;
+    rows.forEach((r, i) => box.appendChild(playerRow((i === 0 && r.f ? '🏆 ' : '') + r.name, r.char, r.f ? fmt(r.t) : 'racing…', i === 0)));
+    $('resultTitle').textContent = !online ? 'FINISH ' + fmt(me.finishTime) : rows[0].me ? 'YOU WIN!' : other.name + ' WINS!';
     const best = Math.min(...lapTimes);
-    $('resultNote').textContent = (lapTimes.length ? 'Лучший круг: ' + fmt(best) + '. ' : '') +
-      (online && !other.finished ? other.name + ' ещё едет — подбодри смайликом!' : '');
+    $('resultNote').textContent = (lapTimes.length ? 'Best lap: ' + fmt(best) + '. ' : '') +
+      (online && !other.finished ? other.name + ' is still racing — cheer with an emoji!' : '');
   }
 
   // ---------- Рендер ----------
@@ -690,7 +740,7 @@
       };
       const Z = T.zoneTex;
       tex = {
-        ground: { default: mkGround(T.groundTex), bridge: mkGround(Z.water), ice: mkGround(Z.ice), tunnel: mkGround(Z.tunnel) },
+        ground: { default: mkGround(T.groundTex), bridge: mkGround(Z.water), ice: mkGround(Z.ice), tunnel: mkGround(Z.tunnel), lava: mkGround(Z.lava) },
         road: { default: T.roadTex, bridge: Z.bridgeRoad, ice: Z.iceRoad, tunnel: T.roadTex },
       };
       texFor = T;
@@ -706,7 +756,7 @@
     const s = (p.screen.scale = CAM_DEPTH / p.camera.z);
     p.screen.x = W / 2 + s * p.camera.x * SX;
     p.screen.y = HORIZON - s * p.camera.y * SX;
-    p.screen.w = s * ROAD * SX;
+    p.screen.w = s * ROAD * SX * (p.wm || 1);
   }
   function quad(x1, y1, x2, y2, x3, y3, x4, y4, c) {
     ctx.fillStyle = c;
@@ -719,7 +769,7 @@
     const z1 = seg.p1.world.z, z2 = seg.p2.world.z;
     const X = textures();
     const G = X.ground[seg.zone] || X.ground.default, RD = X.road[seg.zone] || X.road.default;
-    const vAnim = seg.zone === 'bridge' ? nowG * 0.012 : 0;   // вода течёт
+    const vAnim = seg.zone === 'bridge' ? nowG * 0.012 : seg.zone === 'lava' ? nowG * 0.005 : 0;   // вода течёт
     const GTs = Tracks.GT, stripW = GTs * STRIP_TILES;
     const yTop = Math.max(Math.floor(y2), Math.floor(HORIZON) - 2), yBot = Math.min(Math.ceil(y1), H);
     const span = y1 - y2;
@@ -782,20 +832,36 @@
     ctx.globalAlpha = 1;
   }
 
+  // drift sparks under the rear wheels: white -> blue -> orange as the mini-turbo charges
+  function driftSparks(car, x, y, w, now) {
+    const col = car.driftT > 1.5 ? ['#ffb040', '#ff6a1a'] : car.driftT > 0.7 ? ['#9fd6ff', '#3d8cff'] : ['#ffffff', '#ffe9a8'];
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of [-1, 1]) {
+      const wx = x + s * w * 0.33, wy = y - w * 0.04;
+      for (let i = 0; i < 5; i++) {
+        const a = Math.random() * Math.PI - Math.PI, r = w * (0.04 + Math.random() * 0.12);
+        ctx.fillStyle = col[i % 2];
+        ctx.fillRect(wx + Math.cos(a) * r, wy + Math.sin(a) * r * 0.5, Math.max(1, w * 0.02), Math.max(1, w * 0.02));
+      }
+      const g = ctx.createRadialGradient(wx, wy, 1, wx, wy, w * 0.1);
+      g.addColorStop(0, col[0]); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(wx - w * 0.1, wy - w * 0.1, w * 0.2, w * 0.2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   function drawKartAt(car, x, y, scale, now, isMe) {
     const boost = isMe ? now < car.boostUntil : car.boost;
     const hit = isMe ? now < car.hitUntil : car.hit;
-    // поворот держим кадром чуть дольше, чтобы спрайт не мигал при коротких нажатиях
-    car.poseT = car.poseT || { pose: 'C', until: 0 };
-    let pose = hit ? 'H' : car.steer < 0 ? 'L' : car.steer > 0 ? 'R' : 'C';
-    if (pose === 'L' || pose === 'R' || pose === 'H') car.poseT = { pose, until: now + 140 };
-    else if (now < car.poseT.until) pose = car.poseT.pose;
-    const img = Chars.frame(car.char, pose, boost);
-    if (!img) return;
+    const yaw = car.yaw || 0;
+    if (Math.abs(yaw) > 0.3) car.side = Math.sign(yaw);
+    const fr = Chars.frame(car.char, yaw, car.side || 1, boost, hit, !!car.drift);
+    if (!fr) return;
+    const img = fr.img;
     const sp = (car.speed || 0) / MAX;
     const rough = Math.abs(car.x) > 1 ? 1.6 : 0.5;
     const bounce = sp > 0.05 ? Math.sin(now / 95 + (isMe ? 0 : 2)) * rough * sp * scale * SX * 25 : 0;
-    const k = (KART_W * scale * SX) / Chars.rearWidth(car.char);   // общий масштаб для всех кадров персонажа
+    const k = ((KART_W * scale * SX) / Chars.rearWidth(car.char)) * fr.s;   // same visual size in every frame
     const w = img.width * k, h = img.height * k;
     if (w < 2) return;
     const airPx = (car.airH || 0) * scale * SX;
@@ -804,7 +870,9 @@
       ctx.beginPath(); ctx.ellipse(x, y - h * 0.04, w * 0.42 / (1 + airPx / (h * 2)), h * 0.08, 0, 0, 7); ctx.fill();
     }
     const top = y - h - bounce - airPx;
-    ctx.drawImage(img, x - w / 2, top, w, h);
+    const lean = yaw * w * 0.06;
+    ctx.drawImage(img, x - w / 2 + lean, top, w, h);
+    if (car.drift && car.driftT > 0.25) driftSparks(car, x, y, w, now);
     if (boost && !Chars.hasBoost(car.char)) {
       // у персонажа нет кадра нитро — рисуем пламя из выхлопа
       const fl = Art.puff(Chars.byId(car.char).flame || '#7cc4ff');
@@ -959,8 +1027,10 @@
         if (p2.y < p1.y) drawSegment(seg);
         const alpha = clamp(seg.fog * 1.6, 0, 1);
         for (const s of seg.sprites) if (s.def.decal) drawDecal(s, seg, alpha);
+        const tooClose = seg.p1.camera.z < PLAYER_Z * 0.75;   // objects between camera and kart would block the view
         for (const s of seg.sprites) {
           if (s.def.decal) continue;
+          if (tooClose && s.def.w < 5000) continue;
           let lift = 0;
           if (s.nitro != null) {
             if ((pickedN[s.nitro] || 0) > now) continue;
@@ -1041,7 +1111,7 @@
   function drawHud(now, camZ) {
     const done = Math.max(0, me.total - T.START_Z);
     const lap = Math.min(laps, Math.floor(done / T.LENGTH) + 1);
-    text('КРУГ', 6, 6, 8, '#ffd84a');
+    text('LAP', 6, 6, 8, '#ffd84a');
     text(lap + '/' + laps, 6, 16, 16, '#ffffff');
     const t = mode === 'countdown' ? 0 : me.finished ? me.finishTime : now - raceStart;
     text(fmt(t), 6, 36, 8, '#ffffff');
@@ -1065,7 +1135,7 @@
     // спидометр и нитро
     const kmh = Math.round((me.speed / MAX) * 220);
     text(String(kmh).padStart(3, ' '), W - 8, H - 30, 16, now < me.boostUntil ? '#9fd6ff' : '#ffffff', 'right');
-    text('КМ/Ч', W - 8, H - 12, 8, '#ffd84a', 'right');
+    text('KM/H', W - 8, H - 12, 8, '#ffd84a', 'right');
     for (let i = 0; i < NITRO_MAX; i++) {
       const x = W - 14 - i * 12, y = H - 48;
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 1, y - 1, 10, 14);
@@ -1078,8 +1148,8 @@
     // соперник вне кадра
     if (online && other.present) {
       const d = other.total - me.total, m = Math.round(d / 40);
-      if (other.total - camZ <= 60) text('▼ ' + other.name + ' ' + m + 'м', W / 2, H - 14, 8, '#ffb0c8', 'center');
-      else if (other.total - camZ >= DRAW * SEG - SEG) text('▲ ' + other.name + ' +' + m + 'м', W / 2, HORIZON - 14, 8, '#ffb0c8', 'center');
+      if (other.total - camZ <= 60) text('▼ ' + other.name + ' ' + m + 'm', W / 2, H - 14, 8, '#ffb0c8', 'center');
+      else if (other.total - camZ >= DRAW * SEG - SEG) text('▲ ' + other.name + ' +' + m + 'm', W / 2, HORIZON - 14, 8, '#ffb0c8', 'center');
     }
 
     // отсчёт
@@ -1149,7 +1219,7 @@
     if (online && inGame() && now - lastSend > 50) {
       lastSend = now;
       Net.send({ t: 's', tot: Math.round(me.total), x: Math.round(me.x * 1000) / 1000, sp: Math.round(me.speed),
-        st: me.steer, b: now < me.boostUntil, h: now < me.hitUntil, j: Math.round(me.airH || 0) });
+        st: Math.round((me.yaw || 0) * 100) / 100, d: me.drift ? me.drift * (me.driftT > 1.5 ? 3 : me.driftT > 0.7 ? 2 : 1) : 0, b: now < me.boostUntil, h: now < me.hitUntil, j: Math.round(me.airH || 0) });
     }
     if (online) updateRemote(now);
 

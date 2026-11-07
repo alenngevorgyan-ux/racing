@@ -1,38 +1,35 @@
-# Гонка для двоих ♥
+# Kart Duo
 
-Ретро-гонка в духе PS1/PS2 (2.5D, низкое разрешение, 15-битный цвет с дизерингом) в браузере для двух игроков онлайн. Без сервера и без установки: браузеры соединяются напрямую (WebRTC через PeerJS).
+A retro PS1-style kart racer for two players online, in the browser. No server and no install: the two browsers connect directly (WebRTC via PeerJS).
 
-## Как играть
+## How to play
 
-1. Открой игру, введи имя, выбери гонщика и нажми **«Создать комнату»**.
-2. Скопируй ссылку и отправь её второму игроку.
-3. Второй игрок открывает ссылку и жмёт **«Поехали!»**. Вы попадаете в общую комнату: каждый выбирает гонщика, трассу и число кругов выбираете вместе, потом оба жмёте **«Я готов!»**. После гонки кнопка **«В комнату»** возвращает обратно, соединение не рвётся.
+1. Open the game, enter a name, pick a racer and press **Create room**.
+2. Copy the link and send it to your partner. They open it and press **JOIN!**
+3. In the room each player picks a racer; track, mode (EASY / HARD) and laps are chosen together. Both press **READY!** and the race starts.
+4. After the race **BACK TO ROOM** returns you both to the same room.
 
-Управление: стрелки или WASD (на телефоне есть кнопки на экране). На трассе изредка лежат синие канистры нитро: можно накопить до 3 и включать на SHIFT. Клавиши 1–4 отправляют смайлики.
+Controls: arrows / WASD to steer, gas and brake. **SPACE** drifts (hold while turning, release for a turbo: blue sparks = TURBO, orange = SUPER TURBO). **SHIFT** fires nitro (blue cans on the track). 1–4 send emojis. Phones get on-screen buttons.
 
-Трассы: Красный каньон (туннель в скале, перекати-поле), Солнечный берег (мосты над морем, крабы), Лес на закате (деревянный туннель, мост, катящиеся брёвна, грязь), Ночной перевал (ледяное озеро, ледяная пещера, снежки). На всех есть трамплины, ускоряющие полосы и лужи.
+## Tracks
 
-Персонажи: Лис, Зайка, Бульдог, Енот — спрайты в `assets/chars`, исходный лист в `assets/src`.
+Red Canyon, Sunny Coast, Sunset Forest, Night Pass, Neon City, Volcano Rush, Jungle Ruins, Sky Road. Tunnels, bridges over water, lava fields, ice, rainbow arches, ramps, boost pads, oil and mud, rolling obstacles. **HARD** adds more obstacles, faster movers and narrow road sections.
 
-## Запуск на GitHub Pages
+## Characters
 
-Settings → Pages → Source: **Deploy from a branch** → Branch: `main`, папка `/ (root)` → Save.
-Через минуту игра будет доступна по адресу `https://<user>.github.io/racing/`.
+Fox, Bunny, Bulldog, Raccoon: sprites in `assets/chars` (source sheet in `assets/src`).
 
-## Локально
+## Run locally
 
 ```
 python3 -m http.server 8000
 ```
-Потом открой http://localhost:8000
+Then open http://localhost:8000
 
-## Своё
+## Code
 
-Надписи на щитах вдоль трассы меняются в `js/config.js`.
-
-## Структура
-
-- `js/sprites.js`: вся графика (персонажи сзади и спереди в 3/4, карты, декорации), рисуется процедурно
-- `js/tracks.js`: 4 трассы (геометрия, фон-панорамы, палитра, декорации, мини-карта)
-- `js/game.js`: 2.5D-рендер с PS1-постобработкой, частицы, нитро, HUD, физика, синхронизация
-- `js/net.js`: соединение двух игроков
+- `js/chars.js`: character frames, size normalisation, frame choice by steering angle
+- `js/sprites.js`: procedural scenery and obstacles
+- `js/tracks.js`: the 8 tracks (layout, zones, obstacles, EASY/HARD, textures, backdrops, minimap)
+- `js/game.js`: 2.5D renderer, physics (steering, drift, jumps), HUD, lobby, sync
+- `js/net.js`: the two-player connection

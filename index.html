@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Гонка для двоих</title>
+  <title>Kart Duo</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏎️</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,79 +22,82 @@
   </div>
   <div id="toast" class="hidden"></div>
 
-  <!-- Главное меню -->
+  <!-- Main menu -->
   <div id="menu" class="overlay">
     <div class="card">
-      <h1>ГОНКА<br><span>ДЛЯ ДВОИХ</span></h1>
+      <h1>KART<br><span>DUO</span></h1>
 
-      <label>Имя
-        <input id="nameInput" maxlength="14" placeholder="Например, Котик">
+      <label>Name
+        <input id="nameInput" maxlength="14" placeholder="Your name">
       </label>
-      <div class="label">Гонщик</div>
+      <div class="label">Racer</div>
       <div id="chars" class="chars"></div>
 
       <div id="trackBlock">
-        <div class="label">Трасса</div>
+        <div class="label">Track (solo ride)</div>
         <div id="tracks" class="tracks"></div>
+        <div id="diffs" class="diffs"></div>
       </div>
-      <p id="rotateHint" class="help hidden">Поверни телефон горизонтально</p>
+      <p id="rotateHint" class="help hidden">Turn your phone sideways</p>
 
       <div id="joinBlock" class="hidden">
-        <p class="invite">Тебя позвали в комнату <b id="inviteCode"></b></p>
-        <button id="joinInviteBtn" class="big primary">ПОЕХАЛИ!</button>
+        <p class="invite">You're invited to room <b id="inviteCode"></b></p>
+        <button id="joinInviteBtn" class="big primary">JOIN!</button>
       </div>
 
       <div id="hostBlock">
-        <button id="hostBtn" class="big primary">Создать комнату</button>
+        <button id="hostBtn" class="big primary">Create room</button>
         <div class="row">
-          <input id="codeInput" maxlength="6" placeholder="Код комнаты">
-          <button id="joinBtn">Войти</button>
+          <input id="codeInput" maxlength="6" placeholder="Room code">
+          <button id="joinBtn">Join</button>
         </div>
-        <button id="soloBtn">Покататься одному</button>
+        <button id="soloBtn">Ride solo</button>
       </div>
-      <p class="help">Стрелки / WASD — руль, газ, тормоз<br>SHIFT — нитро (канистры на трассе)<br>1–4 — смайлики</p>
+      <p class="help">Arrows / WASD — steer, gas, brake<br>SPACE — drift (hold while turning, release for a turbo)<br>SHIFT — nitro (blue cans on the track) · 1–4 — emojis</p>
     </div>
   </div>
 
-  <!-- Лобби: соединились один раз и остаёмся в комнате -->
+  <!-- Room lobby: connect once and stay together -->
   <div id="lobby" class="overlay hidden">
     <div class="card wide">
-      <h2>КОМНАТА <span id="roomCode"></span></h2>
+      <h2>ROOM <span id="roomCode"></span></h2>
       <div id="shareBlock">
-        <p class="label">Отправь эту ссылку:</p>
+        <p class="label">Send this link:</p>
         <div class="row">
           <input id="shareLink" readonly>
-          <button id="copyBtn">Копировать</button>
+          <button id="copyBtn">Copy</button>
         </div>
       </div>
       <div id="players" class="duo"></div>
-      <div class="label">Твой гонщик</div>
+      <div class="label">Your racer</div>
       <div id="lobbyChars" class="chars small"></div>
-      <div class="label">Трасса <span id="trackWho" class="who"></span></div>
+      <div class="label">Track <span id="trackWho" class="who"></span></div>
       <div id="lobbyTracks" class="tracks"></div>
-      <label id="lapsLabel">Кругов
+      <div class="label">Mode</div>
+      <div id="lobbyDiffs" class="diffs"></div>
+      <label id="lapsLabel">Laps
         <select id="lapsSelect">
           <option>1</option><option>2</option><option selected>3</option><option>5</option>
         </select>
       </label>
       <p id="lobbyStatus" class="status"></p>
-      <button id="readyBtn" class="big primary" disabled>Я ГОТОВ!</button>
-      <button id="leaveBtn" class="ghost">Выйти из комнаты</button>
+      <button id="readyBtn" class="big primary" disabled>READY!</button>
+      <button id="leaveBtn" class="ghost">Leave room</button>
     </div>
   </div>
 
-  <!-- Результаты -->
+  <!-- Results -->
   <div id="result" class="overlay hidden">
     <div class="card">
       <h2 id="resultTitle"></h2>
       <div id="resultTable" class="players"></div>
       <p id="resultNote" class="status"></p>
-      <button id="againBtn" class="big primary">ЕЩЁ РАЗ!</button>
-      <button id="menuBtn" class="ghost">В меню</button>
+      <button id="againBtn" class="big primary">AGAIN!</button>
+      <button id="menuBtn" class="ghost">Menu</button>
     </div>
   </div>
 
-  <!-- Сенсорное управление -->
+  <!-- Touch controls -->
   <div id="touch" class="hidden">
     <div class="tleft">
       <button id="tLeft">◀</button>
@@ -102,6 +105,7 @@
     </div>
     <div class="tright">
       <button id="tNitro" class="nitro">N×0</button>
+      <button id="tDrift" class="nitro">DRIFT</button>
       <button id="tBrake">▼</button>
       <button id="tGas">▲</button>
     </div>

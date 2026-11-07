@@ -406,6 +406,120 @@ const Art = (() => {
     rr(g, 0, 66, 240, 12, 5); paint(g, vg(g, 66, 78, '#f2f2f2'), '#888');
   }) };
 
+  // ---------- Neon City ----------
+  function building(h, col, neon, seed) {
+    return art(220, h, (g) => {
+      rr(g, 10, 10, 200, h - 10, 4); paint(g, vg(g, 10, h, col, 0.15, -0.35), col, 2);
+      let s = seed;
+      const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let y = 30; y < h - 30; y += 22) for (let x = 24; x < 196; x += 22) {
+        if (r() < 0.55) { g.fillStyle = r() < 0.3 ? neon : '#ffe9a8'; g.globalAlpha = 0.6 + r() * 0.4; g.fillRect(x, y, 12, 12); }
+      }
+      g.globalAlpha = 1;
+      g.fillStyle = neon; g.fillRect(10, 10, 200, 6);
+      g.shadowColor = neon; g.shadowBlur = 18; g.fillRect(10, 10, 200, 3); g.shadowBlur = 0;
+    }, 10);
+  }
+  S.building = { w: 2600, hit: 0.7, img: building(520, '#241a3a', '#ff2a9a', 7) };
+  S.building2 = { w: 2400, hit: 0.7, img: building(420, '#1a2440', '#2af0ff', 13) };
+  function neonBoard(text, c) {
+    return { w: 1900, hit: 0.4, img: mk(400, 300, (g) => {
+      for (const x of [80, 300]) { rr(g, x, 150, 18, 150, 4); paint(g, '#2a2a38', '#111', 1.5); }
+      rr(g, 16, 16, 368, 150, 12); g.fillStyle = '#120a20'; g.fill();
+      g.shadowColor = c; g.shadowBlur = 24; g.strokeStyle = c; g.lineWidth = 6; rr(g, 26, 26, 348, 130, 10); g.stroke();
+      g.font = '900 64px Arial Black, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#fff'; g.fillText(text, 200, 92); g.shadowBlur = 0;
+    }) };
+  }
+  S.neonA = neonBoard('TURBO', '#ff2a9a');
+  S.neonB = neonBoard('NITRO', '#2af0ff');
+  S.neonC = neonBoard('DRIFT', '#ffe14a');
+  S.lampNeon = { w: 700, hit: 0.15, img: mk(120, 380, (g) => {
+    const gl = g.createRadialGradient(60, 40, 4, 60, 40, 60); gl.addColorStop(0, 'rgba(42,240,255,.95)'); gl.addColorStop(1, 'rgba(42,240,255,0)');
+    g.fillStyle = gl; g.fillRect(0, 0, 120, 110);
+    rr(g, 54, 40, 12, 336, 4); paint(g, hg(g, 54, 66, '#2a2a38'), '#111', 1.5);
+    rr(g, 30, 30, 60, 12, 6); g.fillStyle = '#bff8ff'; g.fill();
+  }) };
+  S.hoverBot = { w: 650, hit: 0.8, img: art(160, 170, (g) => {
+    ell(g, 80, 160, 46, 7); g.fillStyle = 'rgba(42,240,255,.5)'; g.fill();
+    ell(g, 80, 80, 62, 62); paint(g, sg(g, 80, 80, 62, '#5a5a78'), '#222');
+    rr(g, 30, 64, 100, 34, 17); g.fillStyle = '#120a20'; g.fill();
+    ell(g, 80, 81, 14, 12); g.fillStyle = '#ff2a9a'; g.fill(); ell(g, 76, 77, 5, 4); g.fillStyle = '#fff'; g.fill();
+    g.strokeStyle = '#2af0ff'; g.lineWidth = 4; g.beginPath(); g.moveTo(80, 18); g.lineTo(80, 2); g.stroke();
+  }) };
+  S.neonArch = arch('#1a1030', 'rgba(255,42,154,.95)');
+
+  // ---------- Volcano ----------
+  S.lavaRock = { w: 1300, hit: 0.6, img: art(240, 200, (g) => {
+    shadow(g, 120, 190, 110, 10);
+    const pts = [[12, 192], [30, 90], [90, 30], [160, 24], [214, 80], [228, 192]];
+    poly(g, pts); paint(g, '#2c2224', '#2c2224');
+    poly(g, [[30, 90], [90, 30], [160, 24], [120, 90], [60, 110]]); g.fillStyle = '#3e3236'; g.fill();
+    g.strokeStyle = '#ff7a1a'; g.lineWidth = 4; g.shadowColor = '#ff5a00'; g.shadowBlur = 12;
+    for (const line of [[[60, 180], [80, 130], [70, 100]], [[150, 186], [140, 140], [170, 110], [160, 70]], [[110, 120], [120, 80]]]) {
+      g.beginPath(); line.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+    }
+    g.shadowBlur = 0;
+  }) };
+  S.fireball = { w: 600, hit: 0.85, img: mk(160, 180, (g) => {
+    const gl = g.createRadialGradient(80, 100, 4, 80, 100, 80); gl.addColorStop(0, 'rgba(255,220,120,1)'); gl.addColorStop(0.5, 'rgba(255,120,20,.9)'); gl.addColorStop(1, 'rgba(255,60,0,0)');
+    g.fillStyle = gl; g.fillRect(0, 0, 160, 180);
+    g.beginPath(); g.moveTo(80, 10); g.quadraticCurveTo(140, 80, 120, 130); g.quadraticCurveTo(80, 170, 40, 130); g.quadraticCurveTo(20, 80, 80, 10); g.fillStyle = '#ff6a1a'; g.fill();
+    g.beginPath(); g.moveTo(80, 50); g.quadraticCurveTo(116, 100, 104, 130); g.quadraticCurveTo(80, 152, 56, 130); g.quadraticCurveTo(46, 100, 80, 50); g.fillStyle = '#ffd84a'; g.fill();
+    ell(g, 70, 112, 6, 8); g.fillStyle = '#2a0a00'; g.fill(); ell(g, 92, 112, 6, 8); g.fill();
+  }) };
+  S.lavaArch = arch('#3a1a14', 'rgba(255,120,30,.95)');
+
+  // ---------- Jungle Ruins ----------
+  S.jungleTree = { w: 1700, hit: 0.3, img: art(300, 400, (g) => {
+    shadow(g, 150, 390, 90, 10);
+    rr(g, 132, 160, 36, 236, 12); paint(g, hg(g, 132, 168, '#6a4a2a'), '#4a3018');
+    g.strokeStyle = '#3e6a2a'; g.lineWidth = 4;
+    for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(140 + i * 6, 180 + i * 40); g.quadraticCurveTo(120 - i * 10, 260, 130, 380); g.stroke(); }
+    const leaves = [[150, 120, 110, 70], [80, 160, 70, 46], [222, 160, 70, 46], [150, 70, 80, 50], [100, 100, 60, 40], [200, 100, 60, 40]];
+    for (const [x, y, rx, ry] of leaves) { ell(g, x, y, rx, ry); paint(g, sg(g, x, y, rx, '#2e8a3a'), '#1e5a26', 2); }
+    g.fillStyle = '#ff5a8a'; for (const [x, y] of [[110, 130], [190, 90], [160, 160]]) { ell(g, x, y, 7, 7); g.fill(); }
+  }) };
+  S.ruinPillar = { w: 1100, hit: 0.5, img: art(160, 380, (g) => {
+    shadow(g, 80, 372, 70, 9);
+    rr(g, 20, 330, 120, 46, 4); paint(g, vg(g, 330, 376, '#a8a088'), '#5a5444');
+    rr(g, 36, 70, 88, 264, 4); paint(g, hg(g, 36, 124, '#b8b098'), '#5a5444');
+    g.strokeStyle = 'rgba(60,50,40,.35)'; g.lineWidth = 3; for (const x of [54, 72, 90, 108]) { g.beginPath(); g.moveTo(x, 76); g.lineTo(x, 328); g.stroke(); }
+    poly(g, [[16, 70], [144, 70], [130, 40], [30, 30]]); paint(g, vg(g, 30, 70, '#a8a088'), '#5a5444');
+    g.fillStyle = '#4e8a3a'; for (const [x, y, r] of [[40, 64, 16], [120, 60, 12], [60, 200, 10], [110, 300, 14]]) { ell(g, x, y, r, r * 0.7); g.fill(); }
+  }) };
+  S.boulder = { w: 800, hit: 0.85, img: art(170, 170, (g) => {
+    shadow(g, 85, 160, 70, 9);
+    ell(g, 85, 85, 76, 74); paint(g, sg(g, 85, 85, 76, '#8a8270'), '#4a4436');
+    g.strokeStyle = 'rgba(40,36,28,.5)'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(40, 60); g.lineTo(80, 90); g.lineTo(70, 140); g.moveTo(80, 90); g.lineTo(130, 70); g.stroke();
+    g.fillStyle = '#4e8a3a'; ell(g, 60, 30, 26, 12); g.fill();
+  }) };
+  S.stoneArch = arch('#7a7462', 'rgba(255,220,140,.9)');
+
+  // ---------- Sky Road ----------
+  S.cloudPuff = { w: 1600, hit: 0, img: art(300, 180, (g) => {
+    for (const [x, y, r] of [[80, 110, 60], [160, 80, 76], [230, 112, 56], [140, 130, 60]]) { ell(g, x, y, r, r * 0.8); paint(g, sg(g, x, y, r, '#ffffff'), '#c8d8f0', 0); }
+    g.fillStyle = 'rgba(180,200,240,.35)'; ell(g, 150, 150, 120, 20); g.fill();
+  }, 6) };
+  S.skyPillar = { w: 1100, hit: 0.5, img: art(160, 420, (g) => {
+    rr(g, 20, 376, 120, 40, 6); paint(g, vg(g, 376, 416, '#f4f0ff'), '#a8a0c8');
+    rr(g, 38, 60, 84, 320, 6); paint(g, hg(g, 38, 122, '#f8f4ff'), '#a8a0c8');
+    g.strokeStyle = 'rgba(150,140,190,.4)'; g.lineWidth = 3; for (const x of [56, 74, 92, 108]) { g.beginPath(); g.moveTo(x, 66); g.lineTo(x, 374); g.stroke(); }
+    rr(g, 16, 30, 128, 34, 8); paint(g, vg(g, 30, 64, '#ffd84a'), '#a8801a');
+    ell(g, 80, 18, 18, 18); paint(g, sg(g, 80, 18, 18, '#ff8ac8'), '#a84a80');
+  }) };
+  S.thunderCloud = { w: 900, hit: 0.85, img: art(200, 200, (g) => {
+    for (const [x, y, r] of [[60, 70, 44], [110, 54, 54], [150, 76, 40], [100, 90, 50]]) { ell(g, x, y, r, r * 0.8); paint(g, sg(g, x, y, r, '#5a5a78'), '#2a2a3a', 0); }
+    poly(g, [[100, 110], [80, 160], [100, 156], [86, 200], [130, 140], [108, 144], [122, 110]]); g.fillStyle = '#ffe14a'; g.fill();
+    ell(g, 86, 76, 6, 7); g.fillStyle = '#fff'; g.fill(); ell(g, 120, 76, 6, 7); g.fill();
+  }) };
+  S.rainbowArch = { w: 7200, img: mk(720, 420, (g) => {
+    const cols = ['#ff4a4a', '#ff9a2a', '#ffe14a', '#4ad16a', '#4aa8ff', '#9a6aff'];
+    cols.forEach((c, i) => { g.strokeStyle = c; g.lineWidth = 22; g.beginPath(); g.ellipse(360, 420, 330 - i * 20, 360 - i * 20, 0, Math.PI, 0); g.stroke(); });
+    for (const x of [24, 696]) { ell(g, x, 410, 60, 30); g.fillStyle = '#fff'; g.fill(); }
+  }) };
+
   // ---------- Персонажи ----------
   const CHARS = [
     { id: 'bunny', name: 'Зайка', fur: '#f3eee9', inner: '#f2a7ba', muzzle: '#ffffff', shirt: '#e2557f', scarf: '#f2c14e', kart: '#e04a86', ears: 'bunny', nose: '#e8708f' },
