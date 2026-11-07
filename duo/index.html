@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Двое — a game for two</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <canvas id="overlay"></canvas>
+
+  <!-- Title -->
+  <section id="menu" class="sheet">
+    <div class="card">
+      <span class="kicker">A game for two</span>
+      <h1>Двое</h1>
+      <p class="lede">She walks through amber, he through blue. Neither gets out alone.</p>
+      <label class="field"><span class="kicker dim">Your name</span><input id="nameInput" maxlength="16" placeholder="Name"></label>
+      <div id="inviteBlock" class="hidden invite">
+        <p>You're invited to room <b id="inviteCode"></b></p>
+        <button id="acceptBtn" class="primary">Join your partner</button>
+      </div>
+      <div class="actions">
+        <button id="hostBtn" class="primary">Play together online</button>
+        <div class="row"><input id="codeInput" maxlength="6" placeholder="Room code"><button id="joinBtn">Join</button></div>
+        <button id="localBtn">One keyboard, two players</button>
+      </div>
+      <span class="kicker dim">Levels</span>
+      <div id="menuLevels" class="levels"></div>
+    </div>
+  </section>
+
+  <!-- Room -->
+  <section id="lobby" class="sheet hidden">
+    <div class="card">
+      <span class="kicker">Room <b id="roomCode"></b></span>
+      <h2>Who is who</h2>
+      <div id="shareRow" class="row"><input id="shareLink" readonly><button id="copyBtn">Copy link</button></div>
+      <div id="slots" class="slots"></div>
+      <button id="swapRoles" class="ghost">Swap roles</button>
+      <span class="kicker dim">Level</span>
+      <div id="lobbyLevels" class="levels"></div>
+      <p id="lobbyStatus" class="status"></p>
+      <button id="readyBtn" class="primary" disabled>Ready</button>
+      <button id="leaveBtn" class="ghost">Leave room</button>
+    </div>
+  </section>
+
+  <!-- In play -->
+  <section id="hud" class="hidden">
+    <div class="top">
+      <div class="round">
+        <span class="kicker" id="lvKicker"></span>
+        <span class="name" id="lvName"></span>
+        <span class="note" id="lvNote"></span>
+      </div>
+      <div class="clock" id="clock">0:00</div>
+      <div class="score">
+        <div><span class="kicker ember-ink">She</span><b id="gemE">0/0</b></div>
+        <div><span class="kicker tide-ink">He</span><b id="gemT">0/0</b></div>
+        <div><span class="kicker dim">Falls</span><b id="deaths">0</b></div>
+      </div>
+    </div>
+    <div class="bottom">
+      <div class="emo"><button data-emo="❤️">❤️</button><button data-emo="😘">😘</button><button data-emo="😂">😂</button><button data-emo="😤">😤</button></div>
+      <div id="keysHint" class="keys"></div>
+    </div>
+    <div id="hint" class="hint"></div>
+  </section>
+
+  <section id="pause" class="sheet hidden">
+    <div class="card small">
+      <span class="kicker">Paused</span>
+      <h2>A moment</h2>
+      <button id="resumeBtn" class="primary">Continue</button>
+      <button id="quitBtn" class="ghost">Back to levels</button>
+    </div>
+  </section>
+
+  <!-- Result -->
+  <section id="result" class="sheet hidden">
+    <div class="card small">
+      <span class="kicker" id="resKicker"></span>
+      <h2>Through the doors</h2>
+      <div class="stars" id="resStars"></div>
+      <dl class="facts">
+        <div><dt>Time</dt><dd id="resTime"></dd><small id="resPar"></small></div>
+        <div><dt>Gems</dt><dd id="resGems"></dd></div>
+        <div><dt>Falls</dt><dd id="resDeaths"></dd></div>
+      </dl>
+      <button id="nextBtn" class="primary">Next level</button>
+      <button id="replayBtn">Play it again</button>
+      <button id="levelsBtn" class="ghost">Levels</button>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/rig_defs.js"></script>
+  <script src="js/rig.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
