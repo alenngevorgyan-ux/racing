@@ -473,6 +473,7 @@
       case 'full': toast('The room is full 😅'); goMenu(); break;
     }
   });
+  Net.on('status', (m) => { if (m === 'relay') toast('Direct link is blocked by the network — connecting through a relay…'); });
   Net.on('closed', () => { if (mode !== 'menu') { toast('Connection lost 💔'); goMenu(); } });
   Net.on('error', (e) => {
     const msg = {
@@ -614,7 +615,7 @@
   const inviteCode = (params.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (inviteCode) { show('joinBlock', true); show('hostBlock', false); show('trackBlock', false); $('inviteCode').textContent = inviteCode; }
 
-  const peerReady = () => { if (typeof Peer === 'undefined') { toast('Network library failed to load. Reload the page.'); return false; } return true; };
+  const peerReady = () => { if (typeof Peer === 'undefined' && typeof mqtt === 'undefined') { toast('Network library failed to load. Reload the page.'); return false; } return true; };
 
   function joinRoom(code) {
     if (!code) return toast('Enter a room code');

@@ -1065,14 +1065,14 @@
 
   $('localBtn').onclick = () => { net = 'local'; isHost = true; myRole = 'ember'; startLevel(Math.min(progress.unlocked - 1, LEVELS.length - 1)); };
   $('hostBtn').onclick = () => {
-    if (typeof Peer === 'undefined') return hint('Network library did not load. Reload the page.');
+    if (typeof Peer === 'undefined' && typeof mqtt === 'undefined') return hint('Network library did not load. Reload the page.');
     net = 'online'; isHost = true; myRole = 'ember';
     $('hostBtn').disabled = true; $('hostBtn').textContent = 'Opening a room…';
     Net.host((code) => { $('hostBtn').disabled = false; $('hostBtn').textContent = 'Play together online'; enterLobby(code); });
   };
   const joinRoom = (code) => {
     if (!code) return;
-    if (typeof Peer === 'undefined') return hint('Network library did not load. Reload the page.');
+    if (typeof Peer === 'undefined' && typeof mqtt === 'undefined') return hint('Network library did not load. Reload the page.');
     net = 'online'; isHost = false; myRole = 'tide';
     enterLobby(code);
     Net.join(code);
@@ -1173,6 +1173,7 @@
       case 'full': hint('That room already has two players'); goMenu(); break;
     }
   });
+  Net.on('status', (m) => { if (m === 'relay') hint('Direct link is blocked by the network — using a relay'); });
   Net.on('closed', () => { if (screen !== 'menu') { hint('Your partner disconnected'); goMenu(); } });
   Net.on('error', (e) => { hint(e && e.type === 'peer-unavailable' ? 'Room not found. Ask for a new link.' : 'Connection problem: ' + ((e && e.type) || e)); if (screen === 'lobby' && !Net.connected()) goMenu(); });
 
