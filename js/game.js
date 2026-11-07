@@ -48,7 +48,7 @@
 
   function placeOnGrid(car, slot) {
     car.total = 0; car.x = slot === 0 ? -0.45 : 0.45;
-    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0; car.yaw = 0; car.drift = 0; car.driftT = 0; car.steerS = 0;
+    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0; car.yaw = 0; car.drift = 0; car.driftT = 0; car.steerS = 0; car.heading = 0;
     car.finished = false; car.finishTime = 0;
   }
 
@@ -201,22 +201,27 @@
       else if (!spinning && !hitNow && me.driftT > 0.7) { me.boostUntil = Math.max(me.boostUntil, now + 600); flash = Math.max(flash, 0.2); showBanner('TURBO!', '#7cc4ff', 600); }
       me.drift = 0; me.driftT = 0;
     }
-    // CONTROL: responds right away (tiny 0.06s smoothing so it is not twitchy)
+    // CONTROL: responds right away (tiny smoothing so it is not twitchy)
     me.steerS = lerp(me.steerS || 0, hitNow || spinning ? 0 : steerIn, 1 - Math.exp(-16 * dt));
-    // LOOK: the kart's visual turn builds up over ~0.35s, so frames change gradually
+    // LOOK: the kart's visual turn (relative to the camera) builds up gradually
     let target, rate;
-    if (spinning) { target = Math.sin(now / 90); rate = 12; me.x += Math.sin(now / 70) * dt * 0.9; }
+    if (spinning) { target = Math.sin(now / 90); rate = 12; }
     else if (me.drift) { me.driftT += dt; target = me.drift * (0.8 + 0.3 * steerIn * me.drift); rate = 6; }
     else { target = hitNow ? 0 : steerIn * 0.9; rate = Math.abs(target) > Math.abs(me.yaw || 0) ? 3 : 5; }
     me.yaw = lerp(me.yaw || 0, target, 1 - Math.exp(-rate * dt));
+    // HEADING: the direction the kart really drives, relative to the road.
+    // Steering turns it, the road bending under you turns it the other way, grip slowly straightens it.
+    // The camera sits behind the kart along this heading.
     if (!air) {
-      const dx = dt * 2.1 * grip;
-      let lat;
-      if (me.drift) lat = (me.drift * 0.35 + me.steerS * 0.45) * dx;   // drift: kart holds a tight line, steer adjusts it
-      else lat = me.steerS * dx;
-      if (zone === 'ice') { me.sv = lerp(me.sv || 0, lat / dt, 1 - Math.exp(-1.6 * dt)); me.x += me.sv * dt; }
-      else { me.sv = lat / dt; me.x += lat; }
-      me.x -= dx * sp * seg.curve * CENTRIFUGAL * (zone === 'ice' ? 1.8 : me.drift ? 0.35 : 1);
+      const dir = me.speed >= 0 ? 1 : -1;
+      let turn = me.steerS * 2.1;
+      if (me.drift) turn = (me.drift * 0.7 + me.steerS * 0.6) * 2.1;
+      if (spinning) turn = Math.sin(now / 70) * 3;
+      const align = zone === 'ice' ? 1.2 : me.drift ? 3.2 : 6;
+      me.heading = (me.heading || 0) + (turn * dir - seg.curve * 0.62 * sp * (me.drift ? 0.6 : 1)) * dt;
+      me.heading *= Math.exp(-align * dt);
+      me.heading = clamp(me.heading, -1.1, 1.1);
+      me.x += Math.sin(me.heading) * (me.speed / ROAD) * dt;
       if (me.drift) me.speed *= 1 - 0.08 * dt;
     }
 
@@ -224,14 +229,14 @@
     const maxS = MAX * (boosting ? 1.4 : 1);
     if (mode === 'race' || mode === 'done') {
       if (inp.up && !air) me.speed += ACCEL * (boosting ? 2.5 : 1) * dt;
-      else if (inp.down && !air) me.speed += BRAKE * dt;
-      else if (!air) me.speed += DECEL * dt;
+      else if (inp.down && !air) me.speed += (me.speed > 0 ? BRAKE : -ACCEL * 0.5) * dt;   // brake, then reverse
+      else if (!air) me.speed = me.speed > 0 ? Math.max(0, me.speed + DECEL * dt) : Math.min(0, me.speed - DECEL * dt);
       if (boosting && !inp.down) me.speed += ACCEL * 1.5 * dt;
     } else me.speed = 0;
 
     if (!air && zone !== 'tunnel' && zone !== 'bridge' && Math.abs(me.x) > wm && me.speed > OFF_LIMIT && !boosting) me.speed += OFF_DECEL * dt;
     if (me.speed > maxS) me.speed += (maxS - me.speed) * Math.min(1, 1.5 * dt);
-    me.speed = clamp(me.speed, 0, MAX * 1.4);
+    me.speed = clamp(me.speed, -MAX * 0.3, MAX * 1.4);
     me.x = clamp(me.x, -2.6, 2.6);
 
     // стены туннеля
@@ -241,13 +246,23 @@
       shake = Math.max(shake, 0.12);
       if (Math.random() < 0.5) spawn(me.total, me.x, { y: 120, vz: me.speed * 0.7, vx: -Math.sign(me.x) * 0.5, vy: 200, size: 40, grow: -20, life: 0.3, max: 0.3, a: 1, color: '#ffd27a', add: true });
     }
-    // fell off the edge: water under a bridge, lava, or the sky road
-    const deadly = zone === 'bridge' || zone === 'lava' || (T.def.fallOff && zone !== 'tunnel');
-    if (mode === 'race' && deadly && !air && Math.abs(me.x) > 1.08 * wm) {
-      const fx = zone === 'lava' ? ['#ffb040', '#ff5a1a', 'TOO HOT!'] : zone === 'bridge' ? ['#ffffff', '#8fd0ff', 'SPLASH!'] : ['#ffffff', '#dfe8ff', 'FELL OFF!'];
-      for (let i = 0; i < 24; i++) spawn(me.total, me.x + (Math.random() - 0.5) * 0.4, { y: 0, vz: me.speed * 0.3, vx: (Math.random() - 0.5) * 1.2, vy: 500 + Math.random() * 700, size: 90, grow: 120, life: 0.9, max: 0.9, a: 0.9, color: fx[Math.random() < 0.5 ? 0 : 1], add: zone === 'lava' });
-      me.x = 0; me.speed *= 0.3; me.hitUntil = now + 900; me.drift = 0; shake = 0.4;
-      showBanner(fx[2], fx[1], 1000);
+    // edges: guard rails on bridges, lava and the sky road; the outer limit everywhere else.
+    // You can hit them and stay pressed against them, back off, or drive on.
+    const railed = zone === 'bridge' || zone === 'lava' || (T.def.fallOff && zone !== 'tunnel');
+    const lim = railed ? 1.06 * wm : 2.6;
+    if (Math.abs(me.x) > lim) {
+      const side = Math.sign(me.x);
+      me.x = side * lim;
+      if (Math.sign(me.heading || 0) === side) {
+        const into = Math.abs(Math.sin(me.heading)) * Math.abs(me.speed);
+        if (into > MAX * 0.08 && now > (me.wallAt || 0) + 400) {
+          me.wallAt = now; shake = Math.max(shake, 0.3);
+          me.speed *= 0.55;
+          for (let i = 0; i < 8; i++) spawn(me.total, me.x, { y: 100, vz: me.speed * 0.5, vx: -side * Math.random() * 0.8, vy: 200 + Math.random() * 300, size: 40, grow: -20, life: 0.35, max: 0.35, a: 1, color: '#ffd27a', add: true });
+        }
+        me.heading *= 0.5;
+        me.speed *= 1 - 1.5 * dt;
+      }
     }
 
     if (mode === 'race' && !air) {
@@ -754,9 +769,11 @@
   const GROUND_WORLD = 1500;                // сколько мира в одном тайле земли
   const ROAD_V = SEG * Tracks.RUMBLE * 2;   // длина одного "такта" бордюра
 
-  let CAM_DEPTH = 1, PLAYER_Z = 1000;
+  let CAM_DEPTH = 1, PLAYER_Z = 1000, camYaw = 0;
   function project(p, camX, camY, camZ) {
-    p.camera.x = -camX; p.camera.y = p.world.y - camY; p.camera.z = p.world.z - camZ;
+    p.camera.y = p.world.y - camY; p.camera.z = p.world.z - camZ;
+    // chase camera turned with the kart: things ahead slide sideways in proportion to distance from the kart
+    p.camera.x = -camX - camYaw * (p.camera.z - PLAYER_Z);
     const s = (p.screen.scale = CAM_DEPTH / p.camera.z);
     p.screen.x = W / 2 + s * p.camera.x * SX;
     p.screen.y = HORIZON - s * p.camera.y * SX;
@@ -859,7 +876,7 @@
     const hit = isMe ? now < car.hitUntil : car.hit;
     const yaw = car.yaw || 0;
     if (Math.abs(yaw) > 0.3) car.side = Math.sign(yaw);
-    const fr = Chars.frame(car.char, yaw, car.side || 1, boost, hit, !!car.drift);
+    const fr = Chars.frame(car.char, yaw, car.side || 1, boost, hit, !!car.drift, now);
     if (!fr) return;
     const img = fr.img;
     const sp = (car.speed || 0) / MAX;
@@ -877,7 +894,7 @@
     const lean = yaw * w * 0.06;
     ctx.drawImage(img, x - w / 2 + lean, top, w, h);
     if (car.drift && car.driftT > 0.25) driftSparks(car, x, y, w, now);
-    if (boost && !Chars.hasBoost(car.char)) {
+    if (boost && (fr.noFlame || !Chars.hasBoost(car.char))) {
       // у персонажа нет кадра нитро — рисуем пламя из выхлопа
       const fl = Art.puff(Chars.byId(car.char).flame || '#7cc4ff');
       ctx.globalCompositeOperation = 'lighter';
@@ -947,8 +964,8 @@
       ctx.beginPath(); ctx.ellipse(x, y, s * 2.2, s * 0.7, 0, 0, 7); ctx.ellipse(x + s, y - s * 0.4, s * 1.3, s * 0.8, 0, 0, 7); ctx.fill();
       ctx.fillStyle = 'rgba(170,200,240,.5)'; ctx.beginPath(); ctx.ellipse(x + s * 0.3, y + s * 0.3, s * 2, s * 0.35, 0, 0, 7); ctx.fill();
     }
-    layer(T.farImg, skyOff * 0.25, HORIZON * 0.75);
-    layer(T.nearImg, skyOff * 0.55, HORIZON * 0.45);
+    layer(T.farImg, skyOff * 0.25 + camYaw * W * 0.9, HORIZON * 0.75);
+    layer(T.nearImg, skyOff * 0.55 + camYaw * W * 1.4, HORIZON * 0.45);
     return sun;
   }
   function layer(img, off, h) {
@@ -1218,7 +1235,8 @@
     shake = Math.max(0, shake - dt);
     flash = Math.max(0, flash - dt * 1.6);
     fovK = lerp(fovK, inGame() && now < me.boostUntil ? 1 : 0, 1 - Math.exp(-4 * dt));
-    camXw = lerp(camXw, me.x, 1 - Math.exp(-11 * dt));   // камера мягко догоняет карт
+    camXw = lerp(camXw, me.x, 1 - Math.exp(-11 * dt));
+    camYaw = lerp(camYaw, inGame() ? Math.sin(me.heading || 0) * 0.85 : 0, 1 - Math.exp(-7 * dt));   // камера мягко догоняет карт
 
     if (online && inGame() && now - lastSend > 50) {
       lastSend = now;

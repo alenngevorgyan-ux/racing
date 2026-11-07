@@ -379,7 +379,8 @@ const Tracks = (() => {
       const zone = zoneAt(i);
       if (zone === 'tunnel' || zone === 'arches') { if (i % 3 === 0) put(i, S[segs[i].arch], 0); if (zone === 'tunnel') continue; }
       if (zone === 'bridge') { if (i % 2 === 0) { put(i, S.rail, -1.22); put(i, S.rail, 1.22); } continue; }
-      if (zone === 'lava') { if (i % 9 === 0) put(i, S.lavaRock, (rnd() < 0.5 ? -1 : 1) * (2.4 + rnd() * 2)); continue; }
+      if (zone === 'lava') { if (i % 2 === 0) { put(i, S.rail, -1.22); put(i, S.rail, 1.22); } if (i % 9 === 0) put(i, S.lavaRock, (rnd() < 0.5 ? -1 : 1) * (2.4 + rnd() * 2)); continue; }
+      if (def.fallOff && i % 2 === 0) { put(i, S.skyRail, -1.22); put(i, S.skyRail, 1.22); }
       if (i % 3 === 0) for (const side of [-1, 1]) if (rnd() < def.chance * (zone === 'ice' ? 0.4 : 1)) put(i, pool[Math.floor(rnd() * pool.length)], side * (sideMin + rnd() * 2.8));
       if (def.walls && Math.abs(segs[i].curve) >= 3 && i % 2 === 0 && rnd() < 0.85) put(i, def.walls, (rnd() < 0.5 ? -1 : 1) * (2.15 + rnd() * 0.5));
       if (def.lamps && i % 14 === 0) put(i, def.lamps, (i % 28 ? 1 : -1) * 1.3);

@@ -514,6 +514,11 @@ const Art = (() => {
     poly(g, [[100, 110], [80, 160], [100, 156], [86, 200], [130, 140], [108, 144], [122, 110]]); g.fillStyle = '#ffe14a'; g.fill();
     ell(g, 86, 76, 6, 7); g.fillStyle = '#fff'; g.fill(); ell(g, 120, 76, 6, 7); g.fill();
   }) };
+  S.skyRail = { w: 1400, img: art(240, 120, (g) => {
+    for (const x of [16, 216]) { rr(g, x, 20, 16, 100, 4); paint(g, hg(g, x, x + 16, '#f4f0ff'), '#a8a0c8'); }
+    rr(g, 0, 26, 240, 16, 6); paint(g, vg(g, 26, 42, '#ffd84a'), '#a8801a');
+    rr(g, 0, 66, 240, 12, 5); paint(g, vg(g, 66, 78, '#ff8ac8'), '#a84a80');
+  }) };
   S.rainbowArch = { w: 7200, img: mk(720, 420, (g) => {
     const cols = ['#ff4a4a', '#ff9a2a', '#ffe14a', '#4ad16a', '#4aa8ff', '#9a6aff'];
     cols.forEach((c, i) => { g.strokeStyle = c; g.lineWidth = 22; g.beginPath(); g.ellipse(360, 420, 330 - i * 20, 360 - i * 20, 0, Math.PI, 0); g.stroke(); });

@@ -66,20 +66,28 @@ const Chars = (() => {
       if (img[c.id + 'turn']) { img[c.id + 'turnL'] = mirror(img[c.id + 'turn']); size[c.id + 'turnL'] = size[c.id + 'turn']; }
       if (img[c.id + 'hit']) { img[c.id + 'hitL'] = mirror(img[c.id + 'hit']); size[c.id + 'hitL'] = size[c.id + 'hit']; }
       if (img[c.id + 'stand']) img[c.id + 'head'] = headOf(img[c.id + 'stand']);
+      // straight-from-behind frames drawn in the sheet's style: yaw 0, ±0.4, ±0.7, with/without boost flame
+      if (RearView.has(c.id)) {
+        const s0 = Math.sqrt(a0 / area(RearView.make(c.id, 0, 0)));
+        for (const yv of [-0.7, -0.4, 0, 0.4, 0.7]) for (const fl of [0, 1, 2]) {
+          const k = c.id + 'p' + yv + '_' + fl;
+          img[k] = RearView.make(c.id, yv, fl); size[k] = s0;
+        }
+      }
     }
   }
 
-  // yaw: -1..1 (how much the kart is turned), side: last turn side for the near-straight frame
-  function frame(id, yaw, side, boost, hit, drift) {
-    const pick = (k) => (img[id + k] ? { img: img[id + k], s: size[id + k] || 1 } : null);
+  // yaw: -1..1 (how much the kart is turned relative to the camera)
+  function frame(id, yaw, side, boost, hit, drift, now = 0) {
+    const pick = (k) => (img[id + k] ? { img: img[id + k], s: size[id + k] || 1, k } : null);
     if (hit) return pick(side < 0 ? 'hitL' : 'hit') || pick('rear');
     const a = Math.abs(yaw), left = yaw < 0;
-    if (drift || a > 0.6) return pick(left ? 'turnL' : 'turn') || pick(left ? 'rearL' : 'rear');
-    if (boost && a < 0.35 && img[id + 'boost']) return pick('boost');
-    if (a > 0.18) return pick(left ? 'rearL' : 'rear');
-    return pick(side < 0 ? 'rearL' : 'rear');   // straight: keeps the last side, so no flicker
+    if (drift || a > 0.85) { const f = pick(left ? 'turnL' : 'turn'); if (f) { f.noFlame = true; return f; } }
+    const lvl = a < 0.2 ? 0 : a < 0.55 ? 0.4 : 0.7;
+    const fl = boost ? 1 + (Math.floor(now / 60) % 2) : 0;
+    return pick('p' + (left ? -lvl : lvl) + '_' + fl) || pick(left ? 'rearL' : 'rear');
   }
-  const hasBoost = (id) => !!img[id + 'boost'];
+  const hasBoost = (id) => !!img[id + 'p0_1'] || !!img[id + 'boost'];
   const rearWidth = (id) => (img[id + 'rear'] ? img[id + 'rear'].width : 180);
 
   return { LIST, byId, init, frame, hasBoost, rearWidth,
