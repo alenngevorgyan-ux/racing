@@ -75,13 +75,13 @@ button.ghost { background: transparent; border-color: transparent; box-shadow: n
 .row { display: flex; gap: 8px; }
 .row input { flex: 1; }
 
-.chars { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.chars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .chars .char, .tracks .trk {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 4px 2px 6px; background: #0b0820; border: 2px solid #2a2160;
   font-size: 7px; color: var(--dim); text-shadow: none; box-shadow: none;
 }
-.chars .char img { width: 100%; aspect-ratio: 260 / 330; object-fit: contain; image-rendering: pixelated; }
+.chars .char img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; image-rendering: pixelated; }
 .chars .char.sel, .tracks .trk.sel { border-color: var(--gold); color: var(--gold); background: #231a4a; }
 .chars .char.sel img { animation: bob .6s ease-in-out infinite alternate; }
 @keyframes bob { to { transform: translateY(-3px); } }
@@ -128,3 +128,18 @@ button.ghost { background: transparent; border-color: transparent; box-shadow: n
 #touch button.on { background: rgba(255,216,74,.6); color: var(--ink); }
 #emotes { bottom: auto; top: 8px; left: 50%; transform: translateX(-50%); }
 #hostBlock, #joinBlock, #trackBlock { display: flex; flex-direction: column; gap: 8px; }
+.card.wide { max-width: 560px; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pcard {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 8px; background: #0b0820; border: 2px solid #2a2160; border-radius: 3px; min-height: 130px;
+  justify-content: center; transition: border-color .2s, background .2s;
+}
+.pcard img { height: 84px; image-rendering: pixelated; }
+.pcard .nm { font-weight: 700; text-align: center; }
+.pcard .badge { font-family: var(--px); font-size: 8px; color: var(--dim); text-align: center; }
+.pcard.ready { border-color: #4fd17a; background: #10261c; }
+.pcard.ready .badge { color: #7cff9a; }
+.chars.small .char img { aspect-ratio: 1 / 1; }
+.who { color: var(--gold); font-size: 8px; }
+#readyBtn.waiting { background: linear-gradient(#58c27a, #2f8a50); color: #fff; }

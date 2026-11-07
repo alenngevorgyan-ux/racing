@@ -301,6 +301,111 @@ const Art = (() => {
     g.fillStyle = tg; g.fillText('СТАРТ  /  ФИНИШ', 500, 121);
   }) };
 
+  // ---------- Препятствия и элементы трассы ----------
+  S.barrels = { w: 700, hit: 0.85, img: art(220, 200, (g) => {
+    shadow(g, 110, 190, 100, 10);
+    const barrel = (x, y, c) => {
+      rr(g, x - 34, y - 80, 68, 80, 10); paint(g, hg(g, x - 34, x + 34, c), c);
+      for (const yy of [y - 64, y - 22]) { g.fillStyle = Art_shadeLocal(c, -0.35); g.fillRect(x - 34, yy, 68, 6); }
+      ell(g, x, y - 80, 34, 8); paint(g, shade(c, 0.2), c, 1.5);
+      g.fillStyle = '#ffd84a'; g.font = '900 22px Arial Black, Arial'; g.textAlign = 'center'; g.fillText('!', x, y - 34);
+    };
+    barrel(70, 190, '#c0392b'); barrel(150, 190, '#2d6fb5'); barrel(110, 118, '#d98a1c');
+  }) };
+  function Art_shadeLocal(c, t) { return shade(c, t); }
+
+  // плоские "наклейки" на дорогу (рисуются в плоскости дороги)
+  function puddle(c1, c2, shine) {
+    return art(240, 120, (g) => {
+      ell(g, 120, 60, 112, 52); g.fillStyle = c1; g.fill();
+      ell(g, 110, 56, 80, 34); g.fillStyle = c2; g.fill();
+      if (shine) { g.fillStyle = 'rgba(160,120,255,.35)'; ell(g, 90, 46, 34, 10, -0.2); g.fill(); g.fillStyle = 'rgba(120,255,200,.25)'; ell(g, 140, 66, 26, 8, 0.3); g.fill(); }
+    }, 10);
+  }
+  S.oil = { w: 1000, decal: true, slip: true, img: puddle('#141018', '#24202e', true) };
+  S.mud = { w: 1100, decal: true, slip: true, img: puddle('#5a3a22', '#6e4a2c', false) };
+  S.pad = { w: 900, decal: true, pad: true, img: mk(200, 120, (g) => {
+    rr(g, 4, 4, 192, 112, 10); g.fillStyle = '#1b2440'; g.fill();
+    for (let i = 0; i < 3; i++) {
+      const y = 92 - i * 34;
+      g.beginPath(); g.moveTo(30, y + 10); g.lineTo(100, y - 18); g.lineTo(170, y + 10); g.lineTo(150, y + 18); g.lineTo(100, y - 2); g.lineTo(50, y + 18); g.closePath();
+      g.fillStyle = ['#ffd84a', '#ff9a2a', '#ff4a6a'][i]; g.fill();
+    }
+    g.strokeStyle = '#7cc4ff'; g.lineWidth = 4; rr(g, 4, 4, 192, 112, 10); g.stroke();
+  }) };
+  S.ramp = { w: 1300, ramp: true, img: art(260, 110, (g) => {
+    shadow(g, 130, 102, 124, 8);
+    poly(g, [[10, 104], [40, 20], [220, 20], [250, 104]]); paint(g, vg(g, 20, 104, '#e8b52a'), '#8a6a10');
+    g.save(); poly(g, [[10, 104], [40, 20], [220, 20], [250, 104]]); g.clip();
+    g.fillStyle = '#1c1c22';
+    for (let x = -60; x < 300; x += 44) { g.beginPath(); g.moveTo(x, 104); g.lineTo(x + 22, 104); g.lineTo(x + 52, 20); g.lineTo(x + 30, 20); g.closePath(); g.fill(); }
+    g.restore();
+    rr(g, 40, 14, 180, 10, 4); paint(g, '#f2f2f2', '#888', 1.5);
+  }) };
+  S.tumbleweed = { w: 600, hit: 0.7, img: art(150, 140, (g) => {
+    shadow(g, 75, 132, 50, 7);
+    g.strokeStyle = '#a07a44'; g.lineWidth = 3;
+    for (let i = 0; i < 26; i++) { const a = i * 2.4; g.beginPath(); g.ellipse(75, 70, 58, 54, a, 0, Math.PI * 1.2); g.stroke(); }
+    g.strokeStyle = '#7a5a2e'; g.lineWidth = 2;
+    for (let i = 0; i < 14; i++) { const a = i * 1.3; g.beginPath(); g.ellipse(75, 70, 40, 44, a, 0, Math.PI); g.stroke(); }
+  }) };
+  S.crab = { w: 650, hit: 0.75, img: art(200, 140, (g) => {
+    shadow(g, 100, 132, 80, 8);
+    g.strokeStyle = '#a8231a'; g.lineWidth = 7; g.lineCap = 'round';
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(100 + s * 30, 92 + i * 8); g.lineTo(100 + s * (64 + i * 6), 120 + i * 4); g.stroke(); }
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(100 + s * 40, 70); g.lineTo(100 + s * 70, 40); g.stroke(); ell(g, 100 + s * 76, 30, 20, 16, s * 0.5); paint(g, sg(g, 100 + s * 76, 30, 20, '#e2412f'), '#e2412f'); }
+    ell(g, 100, 86, 50, 34); paint(g, sg(g, 100, 86, 50, '#e2412f'), '#e2412f');
+    for (const s of [-1, 1]) { rr(g, 100 + s * 16 - 3, 40, 6, 22, 3); g.fillStyle = '#a8231a'; g.fill(); ell(g, 100 + s * 16, 38, 9, 9); paint(g, '#fff', '#555', 1.5); ell(g, 100 + s * 16 + 2, 38, 4, 5); g.fillStyle = '#111'; g.fill(); }
+  }) };
+  S.snowball = { w: 750, hit: 0.85, img: art(160, 160, (g) => {
+    shadow(g, 80, 150, 64, 8);
+    ell(g, 80, 80, 70, 70); paint(g, sg(g, 80, 80, 70, '#f4f8ff'), '#9fb0c8');
+    g.fillStyle = 'rgba(150,170,210,.35)';
+    for (const [x, y, r] of [[60, 100, 10], [104, 64, 7], [90, 112, 6], [48, 62, 5]]) { ell(g, x, y, r, r); g.fill(); }
+  }) };
+  S.rollLog = { w: 1500, hit: 0.85, img: art(300, 100, (g) => {
+    shadow(g, 150, 92, 140, 8);
+    rr(g, 20, 20, 250, 70, 34); paint(g, vg(g, 20, 90, '#7a4a2a'), '#7a4a2a');
+    ell(g, 270, 55, 22, 35); paint(g, '#d9b07a', '#7a4a2a');
+    g.strokeStyle = '#a77b4c'; g.lineWidth = 2; ell(g, 270, 55, 11, 18); g.stroke();
+  }) };
+  S.mushBounce = { w: 900, hit: 0.6, img: art(200, 180, (g) => {
+    shadow(g, 100, 170, 80, 8);
+    rr(g, 76, 90, 48, 82, 18); paint(g, hg(g, 76, 124, '#efe0c4'), '#efe0c4');
+    g.beginPath(); g.moveTo(8, 100); g.bezierCurveTo(8, 6, 192, 6, 192, 100); g.quadraticCurveTo(100, 124, 8, 100); g.closePath();
+    paint(g, vg(g, 10, 110, '#7a4ad8'), '#7a4ad8');
+    g.fillStyle = '#ffe36a';
+    for (const [x, y, r] of [[60, 50, 13], [120, 40, 11], [156, 80, 9], [40, 84, 8], [100, 80, 10]]) { ell(g, x, y, r, r * 0.8); g.fill(); }
+  }) };
+
+  // своды туннелей и перила мостов
+  function arch(col, light) {
+    return { w: 7200, img: art(720, 420, (g) => {
+      g.beginPath(); g.rect(0, 0, 720, 420);
+      g.moveTo(130, 420); g.lineTo(130, 200); g.bezierCurveTo(130, 60, 590, 60, 590, 200); g.lineTo(590, 420); g.closePath();
+      const gr = g.createLinearGradient(0, 0, 0, 420); gr.addColorStop(0, shade(col, -0.35)); gr.addColorStop(1, shade(col, 0.05));
+      g.fillStyle = gr; g.fill('evenodd');
+      g.save(); g.beginPath(); g.rect(0, 0, 720, 420); g.moveTo(130, 420); g.lineTo(130, 200); g.bezierCurveTo(130, 60, 590, 60, 590, 200); g.lineTo(590, 420); g.closePath(); g.clip('evenodd');
+      for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(0,0,0,${0.08 + (i % 3) * 0.05})`; g.fillRect((i * 97) % 720, (i * 53) % 420, 40 + (i % 4) * 20, 16); }
+      g.restore();
+      g.strokeStyle = shade(col, 0.25); g.lineWidth = 8;
+      g.beginPath(); g.moveTo(130, 420); g.lineTo(130, 200); g.bezierCurveTo(130, 60, 590, 60, 590, 200); g.lineTo(590, 420); g.stroke();
+      for (const x of [170, 550]) {
+        const gl = g.createRadialGradient(x, 150, 2, x, 150, 34); gl.addColorStop(0, light); gl.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gl; g.fillRect(x - 34, 116, 68, 68);
+        rr(g, x - 8, 142, 16, 14, 3); g.fillStyle = '#fff4c8'; g.fill();
+      }
+    }, 20) };
+  }
+  S.rockArch = arch('#7a3a28', 'rgba(255,190,110,.9)');
+  S.iceArch = arch('#5a7aa8', 'rgba(170,230,255,.9)');
+  S.woodArch = arch('#5a3a22', 'rgba(255,210,130,.9)');
+  S.rail = { w: 1400, img: art(240, 120, (g) => {
+    for (const x of [16, 216]) { rr(g, x, 20, 16, 100, 4); paint(g, hg(g, x, x + 16, '#8a5a36'), '#5a3a22'); }
+    rr(g, 0, 26, 240, 16, 6); paint(g, vg(g, 26, 42, '#c0392b'), '#7a1a14');
+    rr(g, 0, 66, 240, 12, 5); paint(g, vg(g, 66, 78, '#f2f2f2'), '#888');
+  }) };
+
   // ---------- Персонажи ----------
   const CHARS = [
     { id: 'bunny', name: 'Зайка', fur: '#f3eee9', inner: '#f2a7ba', muzzle: '#ffffff', shirt: '#e2557f', scarf: '#f2c14e', kart: '#e04a86', ears: 'bunny', nose: '#e8708f' },

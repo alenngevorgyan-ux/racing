@@ -56,9 +56,9 @@
     </div>
   </div>
 
-  <!-- Лобби -->
+  <!-- Лобби: соединились один раз и остаёмся в комнате -->
   <div id="lobby" class="overlay hidden">
-    <div class="card">
+    <div class="card wide">
       <h2>КОМНАТА <span id="roomCode"></span></h2>
       <div id="shareBlock">
         <p class="label">Отправь эту ссылку:</p>
@@ -67,17 +67,19 @@
           <button id="copyBtn">Копировать</button>
         </div>
       </div>
-      <div id="players" class="players"></div>
-      <div class="label">Трасса</div>
+      <div id="players" class="duo"></div>
+      <div class="label">Твой гонщик</div>
+      <div id="lobbyChars" class="chars small"></div>
+      <div class="label">Трасса <span id="trackWho" class="who"></span></div>
       <div id="lobbyTracks" class="tracks"></div>
-      <p id="lobbyStatus" class="status">Ждём второго игрока…</p>
       <label id="lapsLabel">Кругов
         <select id="lapsSelect">
           <option>1</option><option>2</option><option selected>3</option><option>5</option>
         </select>
       </label>
-      <button id="startBtn" class="big primary" disabled>СТАРТ!</button>
-      <button id="leaveBtn" class="ghost">Выйти</button>
+      <p id="lobbyStatus" class="status"></p>
+      <button id="readyBtn" class="big primary" disabled>Я ГОТОВ!</button>
+      <button id="leaveBtn" class="ghost">Выйти из комнаты</button>
     </div>
   </div>
 
@@ -109,6 +111,7 @@
   <script src="js/config.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/tracks.js"></script>
+  <script src="js/chars.js"></script>
   <script src="js/net.js"></script>
   <script src="js/game.js"></script>
 </body>

@@ -1,7 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const canvas = $('game');
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const ctx = canvas.getContext('2d');
   const { SEG, ROAD } = Tracks;
   const mod = (a, b) => ((a % b) + b) % b;
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -26,8 +26,8 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
   };
   let myName = store.get('name', '');
-  let myChar = store.get('char', Art.CHARS[0].id);
-  if (!Art.CHARS.some((c) => c.id === myChar)) myChar = Art.CHARS[0].id;
+  let myChar = store.get('char', Chars.LIST[0].id);
+  if (!Chars.LIST.some((c) => c.id === myChar)) myChar = Chars.LIST[0].id;
   let trackId = store.get('track', Tracks.list[0].id);
   if (!Tracks.list.some((t) => t.id === trackId)) trackId = Tracks.list[0].id;
   let T = Tracks.get(trackId);
@@ -47,7 +47,7 @@
 
   function placeOnGrid(car, slot) {
     car.total = 0; car.x = slot === 0 ? -0.45 : 0.45;
-    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0;
+    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0;
     car.finished = false; car.finishTime = 0;
   }
 
@@ -152,8 +152,16 @@
     b.disabled = me.nitro <= 0;
   }
 
+  // позиция объекта поперёк дороги (движущиеся препятствия ездят по общему времени гонки)
+  const raceClock = (now) => (mode === 'race' || mode === 'done' ? now - raceStart : now);
+  function spriteO(s, now) {
+    return s.move ? s.move.amp * Math.sin((raceClock(now) / s.move.per) * Math.PI * 2 + s.move.ph) : s.o;
+  }
+  const AIR_H = 750;
+
   function stepMe(dt, now) {
     const seg = T.findSeg(me.total);
+    const zone = seg.zone;
     const sp = me.speed / MAX;
     let inp;
     if (mode === 'race') inp = input();
@@ -161,42 +169,100 @@
     else inp = { up: false, down: false, left: false, right: false };
 
     const hitNow = now < me.hitUntil;
+    const spinning = now < (me.spinUntil || 0);
+    const air = me.air > 0;
+
+    // прыжок
+    if (air) {
+      me.air -= dt;
+      const t = 1 - Math.max(0, me.air) / me.airMax;
+      me.airH = 4 * AIR_H * me.airMax * t * (1 - t);
+      if (me.air <= 0) {
+        me.air = 0; me.airH = 0; shake = Math.max(shake, 0.25);
+        for (let i = 0; i < 10; i++) spawn(me.total - 40, me.x + (Math.random() - 0.5) * 0.4, { vz: me.speed * 0.6, vx: (Math.random() - 0.5) * 0.8, vy: 200, size: 140, grow: 380, life: 0.7, max: 0.7, a: 0.5, color: Art.shade(T.def.ground, -0.1) });
+      }
+    }
+
     me.steer = inp.left ? -1 : inp.right ? 1 : 0;
     const dx = dt * 2.1 * Math.min(1, sp * 1.2 + 0.1);
-    if (!hitNow) me.x += me.steer * dx;
-    me.x -= dx * sp * seg.curve * CENTRIFUGAL;
+    if (spinning) {
+      me.x += Math.sin(now / 70) * dt * 0.9;
+      me.steer = Math.sin(now / 90) > 0 ? 1 : -1;      // кадры заноса туда-сюда
+    } else if (zone === 'ice' && !air) {
+      // на льду руль работает с запаздыванием — машину несёт
+      me.sv = lerp(me.sv || 0, me.steer * 2.1 * Math.min(1, sp * 1.2 + 0.1), 1 - Math.exp(-1.4 * dt));
+      me.x += me.sv * dt;
+    } else if (!hitNow && !air) {
+      me.x += me.steer * dx; me.sv = me.steer * 2.1 * Math.min(1, sp * 1.2 + 0.1);
+    }
+    if (!air) me.x -= dx * sp * seg.curve * CENTRIFUGAL * (zone === 'ice' ? 1.8 : 1);
 
     const boosting = now < me.boostUntil;
     const maxS = MAX * (boosting ? 1.4 : 1);
     if (mode === 'race' || mode === 'done') {
-      if (inp.up) me.speed += ACCEL * (boosting ? 2.5 : 1) * dt;
-      else if (inp.down) me.speed += BRAKE * dt;
-      else me.speed += DECEL * dt;
+      if (inp.up && !air) me.speed += ACCEL * (boosting ? 2.5 : 1) * dt;
+      else if (inp.down && !air) me.speed += BRAKE * dt;
+      else if (!air) me.speed += DECEL * dt;
       if (boosting && !inp.down) me.speed += ACCEL * 1.5 * dt;
     } else me.speed = 0;
 
-    if ((me.x < -1 || me.x > 1) && me.speed > OFF_LIMIT && !boosting) me.speed += OFF_DECEL * dt;
+    if (!air && zone !== 'tunnel' && zone !== 'bridge' && (me.x < -1 || me.x > 1) && me.speed > OFF_LIMIT && !boosting) me.speed += OFF_DECEL * dt;
     if (me.speed > maxS) me.speed += (maxS - me.speed) * Math.min(1, 1.5 * dt);
     me.speed = clamp(me.speed, 0, MAX * 1.4);
     me.x = clamp(me.x, -2.6, 2.6);
 
-    if (mode === 'race') {
+    // стены туннеля
+    if (zone === 'tunnel' && Math.abs(me.x) > 0.98) {
+      me.x = Math.sign(me.x) * 0.98;
+      me.speed *= 1 - 2.5 * dt;
+      shake = Math.max(shake, 0.12);
+      if (Math.random() < 0.5) spawn(me.total, me.x, { y: 120, vz: me.speed * 0.7, vx: -Math.sign(me.x) * 0.5, vy: 200, size: 40, grow: -20, life: 0.3, max: 0.3, a: 1, color: '#ffd27a', add: true });
+    }
+    // мост: съехал — плюх в воду
+    if (mode === 'race' && zone === 'bridge' && !air && Math.abs(me.x) > 1.08) {
+      for (let i = 0; i < 24; i++) spawn(me.total, me.x + (Math.random() - 0.5) * 0.4, { y: 0, vz: me.speed * 0.3, vx: (Math.random() - 0.5) * 1.2, vy: 500 + Math.random() * 700, size: 90, grow: 120, life: 0.9, max: 0.9, a: 0.9, color: Math.random() < 0.5 ? '#ffffff' : '#8fd0ff' });
+      me.x = 0; me.speed *= 0.3; me.hitUntil = now + 900; shake = 0.4;
+      showBanner('ПЛЮХ!', '#8fd0ff', 1000);
+    }
+
+    if (mode === 'race' && !air) {
       for (const s of [seg, T.findSeg(me.total + SEG)]) for (const sp2 of s.sprites) {
+        const d = sp2.def, o = spriteO(sp2, now);
         if (sp2.nitro != null) {
           if ((pickedN[sp2.nitro] || 0) > now || me.nitro >= NITRO_MAX) continue;
-          if (overlap(me.x, KART_U, sp2.o, (sp2.def.w / ROAD) * 0.9)) {
+          if (overlap(me.x, KART_U, o, (d.w / ROAD) * 0.9)) {
             pickedN[sp2.nitro] = now + NITRO_RESPAWN;
             me.nitro++;
             updateNitroBtn();
-            sparkBurst(me.total + 300, sp2.o, '#bfe4ff');
+            sparkBurst(me.total + 300, o, '#bfe4ff');
             showBanner('+НИТРО', '#7cc4ff', 900);
           }
           continue;
         }
-        if (!sp2.def.hit || hitNow) continue;
-        if (overlap(me.x, KART_U, sp2.o, (sp2.def.w / ROAD) * sp2.def.hit)) {
-          crash(now, sp2.def === Art.S.cone ? 0.35 : 0.12);
-          me.x += me.x < sp2.o ? -0.08 : 0.08;
+        if (d.pad) {
+          if (overlap(me.x, KART_U, o, d.w / ROAD) && now > (me.padAt || 0) + 600) {
+            me.padAt = now; me.boostUntil = Math.max(me.boostUntil, now + 900); flash = Math.max(flash, 0.2);
+          }
+          continue;
+        }
+        if (d.slip) {
+          if (!spinning && overlap(me.x, KART_U, o, (d.w / ROAD) * 0.8)) {
+            me.spinUntil = now + 950; me.speed *= 0.72; shake = Math.max(shake, 0.2);
+            showBanner('ЗАНОС!', d === Art.S.oil ? '#c8a8ff' : '#d9a066', 800);
+          }
+          continue;
+        }
+        if (d.ramp) {
+          if (overlap(me.x, KART_U, o, (d.w / ROAD) * 0.9) && me.speed > MAX * 0.25) {
+            me.airMax = me.air = 0.45 + 0.55 * (me.speed / MAX);
+            showBanner('ПРЫЖОК!', '#ffd84a', 700);
+          }
+          continue;
+        }
+        if (!d.hit || hitNow) continue;
+        if (overlap(me.x, KART_U, o, (d.w / ROAD) * d.hit)) {
+          crash(now, sp2.move ? 0.25 : d === Art.S.barrels ? 0.3 : 0.12);
+          me.x += me.x < o ? -0.1 : 0.1;
           me.total -= SEG * 0.5;
         }
       }
@@ -216,7 +282,7 @@
   }
 
   function collideWithOther(now) {
-    if (!online || !other.present) return;
+    if (!online || !other.present || (other.airH || 0) > 150) return;
     const dz = other.total - me.total;
     if (Math.abs(dz) < 330 && Math.abs(other.x - me.x) < KART_U * 1.1) {
       const push = (KART_U * 1.1 - Math.abs(other.x - me.x)) * 0.6;
@@ -237,11 +303,12 @@
       const k = (rt - a.t) / (b.t - a.t || 1);
       other.total = lerp(a.tot, b.tot, k);
       other.x = lerp(a.x, b.x, k);
+      other.airH = lerp(a.j, b.j, k);
       cur = k < 0.5 ? a : b;
     } else {
       cur = s[s.length - 1];
       other.total = cur.tot + cur.sp * (clamp(rt - cur.t, 0, 250) / 1000);
-      other.x = cur.x;
+      other.x = cur.x; other.airH = cur.j;
     }
     other.speed = cur.sp; other.steer = cur.st; other.boost = cur.b; other.hit = cur.h;
   }
@@ -251,7 +318,8 @@
   Net.on('connected', () => {
     online = true;
     Net.send({ t: 'hello', name: myName, char: myChar });
-    if (isHost) Net.send({ t: 'track', id: trackId });
+    if (isHost) Net.send({ t: 'room', track: trackId, laps });
+    Net.send({ t: 'where', v: mode === 'lobby' ? 'lobby' : 'race' });
     toast('Соединение есть ♥');
   });
   Net.on('message', (m) => {
@@ -259,14 +327,21 @@
     switch (m.t) {
       case 'hello':
         other.name = String(m.name || 'Гость').slice(0, 14);
-        other.char = Art.CHARS.some((c) => c.id === m.char) ? m.char : 'cat';
+        other.char = Chars.LIST.some((c) => c.id === m.char) ? m.char : Chars.LIST[1].id;
         other.present = true;
         renderLobby();
         break;
-      case 'track': if (!isHost) { setTrack(m.id, false); renderLobby(); } break;
-      case 'go': laps = m.laps || 3; setTrack(m.track || trackId, false); startCountdown(); break;
+      case 'room': setTrack(m.track, false); setLaps(m.laps); renderLobby(); break;
+      case 'track': setTrack(m.id, false); trackBy = other.name; resetReady(); break;
+      case 'laps': setLaps(m.n); resetReady(); break;
+      case 'char':
+        if (Chars.LIST.some((c) => c.id === m.id)) other.char = m.id;
+        resetReady(); break;
+      case 'ready': other.ready = !!m.v; renderLobby(); checkStart(); break;
+      case 'where': other.where = m.v; if (m.v !== 'lobby') other.ready = false; renderLobby(); checkStart(); break;
+      case 'go': setLaps(m.laps || 3); setTrack(m.track || trackId, false); other.where = 'race'; startCountdown(); break;
       case 's':
-        other.snaps.push({ t: now, tot: m.tot, x: m.x, sp: m.sp, st: m.st, b: m.b, h: m.h });
+        other.snaps.push({ t: now, tot: m.tot, x: m.x, sp: m.sp, st: m.st, b: m.b, h: m.h, j: m.j || 0 });
         if (other.snaps.length > 40) other.snaps.shift();
         break;
       case 'fin':
@@ -305,7 +380,7 @@
     return Art.mk(w, h, (g) => { g.imageSmoothingQuality = 'high'; g.drawImage(src, 0, 0, w, h); }).toDataURL();
   };
   const portraitURL = {};
-  const portraitSrc = (id) => portraitURL[id] || (portraitURL[id] = lowres(Art.portrait(id), 78));
+  const portraitSrc = (id) => portraitURL[id] || (portraitURL[id] = Chars.stand(id) ? lowres(Chars.stand(id), 90) : '');
 
   const nameInput = $('nameInput');
   nameInput.value = myName;
@@ -314,7 +389,7 @@
   function renderChars() {
     const box = $('chars');
     box.innerHTML = '';
-    for (const c of Art.CHARS) {
+    for (const c of Chars.LIST) {
       const b = document.createElement('button');
       b.className = 'char' + (c.id === myChar ? ' sel' : '');
       b.innerHTML = '<img alt=""><span></span>';
@@ -324,8 +399,6 @@
       box.appendChild(b);
     }
   }
-  renderChars();
-
   // превью трасс
   const thumbURL = {};
   function thumb(id) {
@@ -352,8 +425,11 @@
         b.innerHTML = '<img alt=""><span></span>';
         b.querySelector('img').src = thumb(t.id);
         b.querySelector('span').textContent = t.name;
-        b.disabled = boxId === 'lobbyTracks' && !isHost;
-        b.onclick = () => { setTrack(t.id, true); if (online && isHost) Net.send({ t: 'track', id: t.id }); };
+        b.onclick = () => {
+          if (t.id === trackId) return;
+          setTrack(t.id, true);
+          if (boxId === 'lobbyTracks') { trackBy = me.name; if (online) Net.send({ t: 'track', id: t.id }); resetReady(); }
+        };
         box.appendChild(b);
       }
     }
@@ -367,7 +443,7 @@
   renderTracks();
 
   function ensureName() {
-    if (!myName) myName = Art.charById(myChar).name;
+    if (!myName) myName = Chars.byId(myChar).name;
     me.name = myName; me.char = myChar;
   }
 
@@ -395,14 +471,21 @@
   };
   $('soloBtn').onclick = () => { ensureName(); Net.destroy(); resetOther(); isHost = true; laps = 3; startCountdown(); };
 
-  function resetOther() { other.present = false; other.snaps = []; other.name = ''; other.finished = false; online = false; }
+  function resetOther() { other.present = false; other.snaps = []; other.name = ''; other.finished = false; other.ready = false; other.where = ''; online = false; trackBy = ''; }
+
+  let roomCode = '', myReady = false, trackBy = '';
+  function setLaps(n) { laps = clamp(parseInt(n, 10) || 3, 1, 9); $('lapsSelect').value = String(laps); }
 
   function goLobby(code, host) {
     mode = 'lobby';
+    roomCode = code || roomCode;
+    myReady = false;
     show('menu', false); show('lobby', true); show('result', false);
-    $('roomCode').textContent = code;
+    for (const id of ['emotes', 'touch']) show(id, false);
+    $('roomCode').textContent = roomCode;
     show('shareBlock', host);
-    $('shareLink').value = location.origin + location.pathname + '?room=' + code;
+    $('shareLink').value = location.origin + location.pathname + '?room=' + roomCode;
+    if (online) { Net.send({ t: 'where', v: 'lobby' }); Net.send({ t: 'ready', v: false }); }
     renderTracks();
     renderLobby();
   }
@@ -417,17 +500,69 @@
     return row;
   }
 
+  function pcard(name, charId, ready, note) {
+    const c = document.createElement('div');
+    c.className = 'pcard' + (ready ? ' ready' : '');
+    c.innerHTML = '<img alt=""><div class="nm"></div><div class="badge"></div>';
+    if (charId) c.querySelector('img').src = portraitSrc(charId); else c.querySelector('img').remove();
+    c.querySelector('.nm').textContent = name;
+    c.querySelector('.badge').textContent = ready ? 'ГОТОВ ✓' : note;
+    return c;
+  }
+
+  function renderLobbyChars() {
+    const box = $('lobbyChars');
+    box.innerHTML = '';
+    for (const c of Chars.LIST) {
+      const b = document.createElement('button');
+      b.className = 'char' + (c.id === myChar ? ' sel' : '');
+      b.innerHTML = '<img alt=""><span></span>';
+      b.querySelector('img').src = portraitSrc(c.id);
+      b.querySelector('span').textContent = c.name;
+      b.onclick = () => {
+        if (c.id === myChar) return;
+        myChar = c.id; me.char = c.id; store.set('char', c.id);
+        renderChars();
+        if (online) Net.send({ t: 'char', id: c.id });
+        resetReady();
+      };
+      box.appendChild(b);
+    }
+  }
+
+  function resetReady() {
+    if (myReady && online) Net.send({ t: 'ready', v: false });
+    myReady = false; other.ready = false;
+    renderLobby();
+  }
+
   function renderLobby() {
     if (mode !== 'lobby') return;
     const box = $('players');
     box.innerHTML = '';
-    box.appendChild(playerRow(me.name + ' (ты)', me.char, '', true));
-    if (other.present) box.appendChild(playerRow(other.name, other.char, '', true));
-    $('startBtn').disabled = !other.present || !isHost;
-    show('startBtn', isHost);
-    show('lapsLabel', isHost);
-    $('lobbyStatus').textContent = !other.present ? (isHost ? 'Ждём второго игрока…' : 'Подключаемся…')
-      : isHost ? 'Все на месте! Выбери трассу и жми старт' : 'Трассу выбирает ' + other.name + '. Ждём старта…';
+    box.appendChild(pcard(me.name + ' (ты)', me.char, myReady, 'выбирает…'));
+    if (other.present) box.appendChild(pcard(other.name, other.char, other.ready, other.where && other.where !== 'lobby' ? 'смотрит результаты…' : 'выбирает…'));
+    else box.appendChild(pcard(isHost ? 'Ждём…' : 'Подключаемся…', null, false, isHost ? 'отправь ссылку ↑' : ''));
+    renderLobbyChars();
+    $('trackWho').textContent = trackBy ? '· выбрал(а) ' + trackBy : '';
+    const rb = $('readyBtn');
+    rb.disabled = !other.present;
+    rb.textContent = myReady ? 'ЖДЁМ… (ОТМЕНА)' : 'Я ГОТОВ!';
+    rb.classList.toggle('waiting', myReady);
+    $('lobbyStatus').textContent = !other.present ? (isHost ? 'Отправь ссылку второму игроку' : 'Подключаемся к комнате…')
+      : myReady && other.ready ? 'Поехали!'
+      : myReady ? 'Ждём, когда ' + other.name + ' нажмёт «Готов»'
+      : other.ready ? other.name + ' готов(а)! Жми «Я готов»'
+      : 'Выберите гонщиков и трассу, потом оба жмите «Я готов»';
+  }
+
+  function checkStart() {
+    if (!isHost || mode !== 'lobby' || !online || !other.present) return;
+    if (myReady && other.ready && other.where === 'lobby') {
+      Net.send({ t: 'go', laps, track: trackId });
+      other.where = 'race';
+      startCountdown();
+    }
   }
 
   $('copyBtn').onclick = async () => {
@@ -435,13 +570,23 @@
     try { await navigator.clipboard.writeText(v); } catch (_) { $('shareLink').select(); document.execCommand('copy'); }
     toast('Ссылка скопирована');
   };
-  $('startBtn').onclick = () => { laps = parseInt($('lapsSelect').value, 10) || 3; Net.send({ t: 'go', laps, track: trackId }); startCountdown(); };
+  $('readyBtn').onclick = () => {
+    myReady = !myReady;
+    Net.send({ t: 'ready', v: myReady });
+    renderLobby();
+    checkStart();
+  };
+  $('lapsSelect').onchange = () => {
+    setLaps($('lapsSelect').value);
+    if (online) Net.send({ t: 'laps', n: laps });
+    resetReady();
+  };
   $('leaveBtn').onclick = goMenu;
   $('menuBtn').onclick = goMenu;
   $('againBtn').onclick = () => {
     if (online) {
       if (!Net.connected()) { toast('Соединение потеряно'); return goMenu(); }
-      Net.send({ t: 'go', laps, track: trackId });
+      return goLobby(roomCode, isHost);
     }
     startCountdown();
   };
@@ -472,8 +617,8 @@
   function finish(now) {
     me.finished = true;
     me.finishTime = now - raceStart;
-    lapTimes.push(now - lapStart);
-    if (online) Net.send({ t: 'fin', time: me.finishTime });
+    if (lapTimes.length < laps) lapTimes.push(now - lapStart);
+    if (online) { Net.send({ t: 'fin', time: me.finishTime }); Net.send({ t: 'where', v: 'result' }); }
     mode = 'done';
     show('touch', false);
     showBanner('ФИНИШ!', '#ffffff', 1800);
@@ -488,13 +633,15 @@
   function renderResult() {
     if (mode !== 'done') return;
     show('result', true);
+    $('againBtn').textContent = online ? 'В КОМНАТУ' : 'ЕЩЁ РАЗ!';
+    $('menuBtn').textContent = online ? 'Выйти из комнаты' : 'В меню';
     const rows = [{ name: me.name + ' (ты)', char: me.char, t: me.finishTime, f: true, me: true }];
     if (online) rows.push({ name: other.name, char: other.char, t: other.finishTime, f: other.finished });
     rows.sort((a, b) => (a.f === b.f ? a.t - b.t : a.f ? -1 : 1));
     const box = $('resultTable');
     box.innerHTML = '';
     rows.forEach((r, i) => box.appendChild(playerRow((i === 0 && r.f ? '🏆 ' : '') + r.name, r.char, r.f ? fmt(r.t) : 'в пути…', i === 0)));
-    $('resultTitle').textContent = !online ? 'ФИНИШ ' + fmt(me.finishTime) : rows[0].me ? 'ПОБЕДА!' : 'Победа за ' + other.name;
+    $('resultTitle').textContent = !online ? 'ФИНИШ ' + fmt(me.finishTime) : rows[0].me ? 'ПОБЕДА!' : '1 место — ' + other.name;
     const best = Math.min(...lapTimes);
     $('resultNote').textContent = (lapTimes.length ? 'Лучший круг: ' + fmt(best) + '. ' : '') +
       (online && !other.finished ? other.name + ' ещё едет — подбодри смайликом!' : '');
@@ -518,27 +665,40 @@
   addEventListener('resize', resize);
   resize();
 
-  // PS1-постобработка: 15-битный цвет + упорядоченный дизеринг 4×4
+  // PS1-дизеринг: упорядоченная решётка Байера 4×4 поверх кадра (дёшево, на видеокарте)
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-  const LUT = BAYER.map((b) => {
-    const off = (b / 16 - 0.5) * 8;
-    const t = new Uint8ClampedArray(256);
-    for (let v = 0; v < 256; v++) t[v] = (Math.min(255, Math.max(0, Math.round(v + off))) & 248) | 4;
-    return t;
-  });
-  function ps1Pass() {
-    const img = ctx.getImageData(0, 0, W, H);
-    const a = img.data;
-    for (let y = 0; y < H; y++) {
-      const row = (y & 3) * 4;
-      let i = y * W * 4;
-      for (let x = 0; x < W; x++, i += 4) {
-        const t = LUT[row + (x & 3)];
-        a[i] = t[a[i]]; a[i + 1] = t[a[i + 1]]; a[i + 2] = t[a[i + 2]];
-      }
-    }
-    ctx.putImageData(img, 0, 0);
+  const ditherPat = ctx.createPattern(Art.mk(4, 4, (g) => {
+    BAYER.forEach((b, i) => { const v = Math.round((b / 15) * 255); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(i % 4, i >> 2, 1, 1); });
+  }), 'repeat');
+  function ditherOverlay() {
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = 0.09;
+    ctx.fillStyle = ditherPat; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
+
+  // текстуры трассы (аффинное наложение, как на PS1): земля — широкая полоса из повторённых тайлов
+  let tex = null, texFor = null;
+  const STRIP_TILES = 24;
+  function textures() {
+    if (texFor !== T) {
+      const GTs = Tracks.GT;
+      const mkGround = (gt) => {
+        const strip = Art.mk(GTs * STRIP_TILES, GTs, (g) => { for (let i = 0; i < STRIP_TILES; i++) g.drawImage(gt, i * GTs, 0); });
+        const avg = Art.mk(1, 1, (g) => { g.imageSmoothingEnabled = true; g.drawImage(gt, 0, 0, 1, 1); }).getContext('2d').getImageData(0, 0, 1, 1).data;
+        return { strip, avg: `rgb(${avg[0]},${avg[1]},${avg[2]})` };
+      };
+      const Z = T.zoneTex;
+      tex = {
+        ground: { default: mkGround(T.groundTex), bridge: mkGround(Z.water), ice: mkGround(Z.ice), tunnel: mkGround(Z.tunnel) },
+        road: { default: T.roadTex, bridge: Z.bridgeRoad, ice: Z.iceRoad, tunnel: T.roadTex },
+      };
+      texFor = T;
+    }
+    return tex;
+  }
+  const GROUND_WORLD = 1500;                // сколько мира в одном тайле земли
+  const ROAD_V = SEG * Tracks.RUMBLE * 2;   // длина одного "такта" бордюра
 
   let CAM_DEPTH = 1, PLAYER_Z = 1000;
   function project(p, camX, camY, camZ) {
@@ -552,19 +712,34 @@
     ctx.fillStyle = c;
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3); ctx.lineTo(x4, y4); ctx.closePath(); ctx.fill();
   }
+  // Сегмент рисуется построчно текстурами: земля на всю ширину, дорога поверх.
   function drawSegment(seg) {
-    const c = seg.c;
     const { x: x1, y: y1, w: w1 } = seg.p1.screen;
     const { x: x2, y: y2, w: w2 } = seg.p2.screen;
-    ctx.fillStyle = c.grass; ctx.fillRect(0, y2, W, y1 - y2 + 1);
-    const r1 = w1 / 7, r2 = w2 / 7;
-    quad(x1 - w1 - r1, y1, x1 - w1, y1, x2 - w2, y2, x2 - w2 - r2, y2, c.rumble);
-    quad(x1 + w1 + r1, y1, x1 + w1, y1, x2 + w2, y2, x2 + w2 + r2, y2, c.rumble);
-    quad(x1 - w1, y1, x1 + w1, y1, x2 + w2, y2, x2 - w2, y2, c.road);
-    const e1 = w1 / 32, e2 = w2 / 32;
-    quad(x1 - w1, y1, x1 - w1 + e1, y1, x2 - w2 + e2, y2, x2 - w2, y2, c.edge);
-    quad(x1 + w1, y1, x1 + w1 - e1, y1, x2 + w2 - e2, y2, x2 + w2, y2, c.edge);
-    if (c.lane) { const l1 = w1 / 40, l2 = w2 / 40; quad(x1 - l1, y1, x1 + l1, y1, x2 + l2, y2, x2 - l2, y2, c.lane); }
+    const z1 = seg.p1.world.z, z2 = seg.p2.world.z;
+    const X = textures();
+    const G = X.ground[seg.zone] || X.ground.default, RD = X.road[seg.zone] || X.road.default;
+    const vAnim = seg.zone === 'bridge' ? nowG * 0.012 : 0;   // вода течёт
+    const GTs = Tracks.GT, stripW = GTs * STRIP_TILES;
+    const yTop = Math.max(Math.floor(y2), Math.floor(HORIZON) - 2), yBot = Math.min(Math.ceil(y1), H);
+    const span = y1 - y2;
+    for (let yy = yTop; yy < yBot; yy++) {
+      const t = span > 0 ? clamp((y1 - (yy + 0.5)) / span, 0, 1) : 0;
+      const x = lerp(x1, x2, t), w = lerp(w1, w2, t), z = lerp(z1, z2, t);
+      // земля: одна строка текстуры, растянутая на ширину экрана
+      const kg = (w / ROAD) * (GROUND_WORLD / GTs);       // экранных пикселей на тексель
+      const uw = W / kg;
+      if (uw > stripW - GTs) { ctx.fillStyle = G.avg; ctx.fillRect(0, yy, W, 1); }
+      else {
+        const v = Math.floor(mod((z / GROUND_WORLD) * GTs + vAnim, GTs));
+        ctx.drawImage(G.strip, mod(-x / kg, GTs), v, uw, 1, 0, yy, W, 1);
+      }
+      // дорога с бордюрами
+      const rw = w * Tracks.ROAD_SPAN;
+      const vr = Math.floor(mod((z / ROAD_V) * Tracks.RT_H, Tracks.RT_H));
+      ctx.drawImage(RD, 0, vr, Tracks.RT_W, 1, x - rw, yy, 2 * rw, 1);
+    }
+    if (seg.zone === 'tunnel' && yBot > yTop) { ctx.fillStyle = 'rgba(10,5,20,.38)'; ctx.fillRect(0, yTop, W, yBot - yTop); }
     if (seg.start) {
       const cols = 12;
       for (let i = 0; i < cols; i++) {
@@ -573,9 +748,9 @@
         quad(x1 - w1 + 2 * w1 * a, y1, x1 - w1 + 2 * w1 * b, y1, x2 - w2 + 2 * w2 * b, y2, x2 - w2 + 2 * w2 * a, y2, '#1c1c22');
       }
     }
-    if (seg.fog < 1) {
+    if (seg.fog < 1 && yBot > yTop) {
       ctx.globalAlpha = 1 - seg.fog; ctx.fillStyle = T.def.fog;
-      ctx.fillRect(0, y2, W, y1 - y2 + 1); ctx.globalAlpha = 1;
+      ctx.fillRect(0, yTop, W, yBot - yTop); ctx.globalAlpha = 1;
     }
   }
 
@@ -590,19 +765,56 @@
     ctx.globalAlpha = 1;
   }
 
+  // плоский объект на асфальте (лужа, ускоряющая полоса): рисуется построчно в плоскости дороги
+  function drawDecal(s, seg, alpha) {
+    const p1 = seg.p1.screen, p2 = seg.p2.screen;
+    const span = p1.y - p2.y;
+    if (span < 0.5) return;
+    const img = s.def.img, ih = img.height / 2, sy0 = s.part ? ih : 0;
+    const y0 = Math.max(Math.floor(p2.y), 0), y1 = Math.min(Math.ceil(p1.y), H);
+    ctx.globalAlpha = alpha;
+    for (let yy = y0; yy < y1; yy++) {
+      const t = clamp((p1.y - (yy + 0.5)) / span, 0, 1);
+      const sc = lerp(p1.scale, p2.scale, t);
+      const x = lerp(p1.x, p2.x, t) + sc * s.o * ROAD * SX, w = s.def.w * sc * SX;
+      ctx.drawImage(img, 0, Math.min(img.height - 1, sy0 + (1 - t) * ih), img.width, 1, x - w / 2, yy, w, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function drawKartAt(car, x, y, scale, now, isMe) {
     const boost = isMe ? now < car.boostUntil : car.boost;
     const hit = isMe ? now < car.hitUntil : car.hit;
-    const pose = hit ? 'H' : car.steer < 0 ? 'L' : car.steer > 0 ? 'R' : 'C';
-    const img = Art.kart(car.char, pose, boost ? 1 + (Math.floor(now / 60) % 2) : 0);
+    // поворот держим кадром чуть дольше, чтобы спрайт не мигал при коротких нажатиях
+    car.poseT = car.poseT || { pose: 'C', until: 0 };
+    let pose = hit ? 'H' : car.steer < 0 ? 'L' : car.steer > 0 ? 'R' : 'C';
+    if (pose === 'L' || pose === 'R' || pose === 'H') car.poseT = { pose, until: now + 140 };
+    else if (now < car.poseT.until) pose = car.poseT.pose;
+    const img = Chars.frame(car.char, pose, boost);
+    if (!img) return;
     const sp = (car.speed || 0) / MAX;
-    const rough = Math.abs(car.x) > 1 ? 1.2 : 0.4;
-    const bounce = sp > 0.05 ? Math.round(Math.sin(now / 38 + (isMe ? 0 : 2)) * rough * sp) : 0;
-    const w = KART_W * scale * SX;
+    const rough = Math.abs(car.x) > 1 ? 1.6 : 0.5;
+    const bounce = sp > 0.05 ? Math.sin(now / 95 + (isMe ? 0 : 2)) * rough * sp * scale * SX * 25 : 0;
+    const k = (KART_W * scale * SX) / Chars.rearWidth(car.char);   // общий масштаб для всех кадров персонажа
+    const w = img.width * k, h = img.height * k;
     if (w < 2) return;
-    const h = (w * Art.SH) / Art.SW;
-    const top = y - (h * Art.BY) / Art.SH - bounce;
+    const airPx = (car.airH || 0) * scale * SX;
+    if (airPx > 1) {   // тень на земле во время прыжка
+      ctx.fillStyle = 'rgba(0,0,0,.3)';
+      ctx.beginPath(); ctx.ellipse(x, y - h * 0.04, w * 0.42 / (1 + airPx / (h * 2)), h * 0.08, 0, 0, 7); ctx.fill();
+    }
+    const top = y - h - bounce - airPx;
     ctx.drawImage(img, x - w / 2, top, w, h);
+    if (boost && !Chars.hasBoost(car.char)) {
+      // у персонажа нет кадра нитро — рисуем пламя из выхлопа
+      const fl = Art.puff(Chars.byId(car.char).flame || '#7cc4ff');
+      ctx.globalCompositeOperation = 'lighter';
+      for (const [fx, fy] of [[0.12, 0.74], [0.27, 0.8]]) {
+        const s = w * (0.22 + 0.06 * Math.sin(now / 40 + fx * 9));
+        ctx.drawImage(fl, x - w / 2 + fx * w - s * 1.1, top + fy * h - s * 0.4, s * 1.4, s);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
     if (!isMe) {
       text(car.name, x, Math.round(top + h * 0.02) - 9, 8, '#fff', 'center');
     }
@@ -685,11 +897,14 @@
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  let nowG = 0;
   function render(now) {
+    nowG = now;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = true;
-    const sx = shake > 0 ? Math.round((Math.random() - 0.5) * 6 * shake) : 0;
-    const sy = shake > 0 ? Math.round((Math.random() - 0.5) * 4 * shake) : 0;
+    // плавная тряска (синусоиды вместо случайных скачков)
+    const sx = shake > 0 ? Math.sin(now / 31) * 4 * shake : 0;
+    const sy = shake > 0 ? Math.cos(now / 43) * 2.5 * shake : 0;
     ctx.translate(sx, sy);
 
     // поле зрения расширяется на нитро — ощущение скорости
@@ -743,13 +958,16 @@
       if (seg.p1.camera.z > CAM_DEPTH) {
         if (p2.y < p1.y) drawSegment(seg);
         const alpha = clamp(seg.fog * 1.6, 0, 1);
+        for (const s of seg.sprites) if (s.def.decal) drawDecal(s, seg, alpha);
         for (const s of seg.sprites) {
+          if (s.def.decal) continue;
           let lift = 0;
           if (s.nitro != null) {
             if ((pickedN[s.nitro] || 0) > now) continue;
             lift = 220 + Math.sin(now / 260 + s.nitro) * 50;
           }
-          drawSprite(s.def.img, s.def.w, p1.x + p1.scale * s.o * ROAD * SX, p1.y, p1.scale, lift, alpha);
+          if (s.move) lift = Math.abs(Math.sin(now / 160 + s.move.ph)) * 60;   // подпрыгивает на ходу
+          drawSprite(s.def.img, s.def.w, p1.x + p1.scale * spriteO(s, now) * ROAD * SX, p1.y, p1.scale, lift, alpha);
         }
       }
       if (seg.objs) {
@@ -774,7 +992,7 @@
     lensFlare(sun);
     if (inGame() && fovK > 0.05) speedLines(now);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ps1Pass();
+    ditherOverlay();
     if (flash > 0) { ctx.fillStyle = `rgba(200,235,255,${flash})`; ctx.fillRect(0, 0, W, H); }
     vignette();
     if (inGame()) drawHud(now, camZ);
@@ -818,7 +1036,7 @@
   }
 
   const headSmall = {};
-  const headImg = (id) => headSmall[id] || (headSmall[id] = (() => { const src = Art.head(id); return Art.mk(18, 21, (g) => g.drawImage(src, 0, 0, 18, 21)); })());
+  const headImg = (id) => headSmall[id] || (headSmall[id] = Art.mk(20, 20, (g) => { const s = Chars.head(id); if (s) g.drawImage(s, 0, 0, 20, 20); }));
 
   function drawHud(now, camZ) {
     const done = Math.max(0, me.total - T.START_Z);
@@ -931,15 +1149,19 @@
     if (online && inGame() && now - lastSend > 50) {
       lastSend = now;
       Net.send({ t: 's', tot: Math.round(me.total), x: Math.round(me.x * 1000) / 1000, sp: Math.round(me.speed),
-        st: me.steer, b: now < me.boostUntil, h: now < me.hitUntil });
+        st: me.steer, b: now < me.boostUntil, h: now < me.hitUntil, j: Math.round(me.airH || 0) });
     }
     if (online) updateRemote(now);
 
     render(now);
     requestAnimationFrame(frame);
   }
-  const startLoop = () => requestAnimationFrame(frame);
-  (document.fonts && document.fonts.load ? document.fonts.load('8px "Press Start 2P"').catch(() => {}) : Promise.resolve()).then(startLoop);
+  const fontReady = document.fonts && document.fonts.load ? document.fonts.load('8px "Press Start 2P"').catch(() => {}) : Promise.resolve();
+  Promise.all([fontReady, Chars.init()]).then(() => {
+    renderChars();
+    last = performance.now();
+    requestAnimationFrame(frame);
+  });
 
-  window.__race = { me, other, startSolo: () => $('soloBtn').click(), keys, setTrack: (id) => setTrack(id, false) };
+  window.__race = { track: () => T, me, other, startSolo: () => $('soloBtn').click(), keys, setTrack: (id) => setTrack(id, false) };
 })();
