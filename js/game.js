@@ -48,7 +48,7 @@
 
   function placeOnGrid(car, slot) {
     car.total = 0; car.x = slot === 0 ? -0.45 : 0.45;
-    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0; car.yaw = 0; car.drift = 0; car.driftT = 0;
+    car.speed = 0; car.steer = 0; car.boostUntil = 0; car.hitUntil = 0; car.nitro = 0; car.air = 0; car.airH = 0; car.spinUntil = 0; car.sv = 0; car.yaw = 0; car.drift = 0; car.driftT = 0; car.steerS = 0;
     car.finished = false; car.finishTime = 0;
   }
 
@@ -201,19 +201,23 @@
       else if (!spinning && !hitNow && me.driftT > 0.7) { me.boostUntil = Math.max(me.boostUntil, now + 600); flash = Math.max(flash, 0.2); showBanner('TURBO!', '#7cc4ff', 600); }
       me.drift = 0; me.driftT = 0;
     }
-    // yaw = how much the kart is turned; it builds up over ~0.3s instead of snapping
+    // CONTROL: responds right away (tiny 0.06s smoothing so it is not twitchy)
+    me.steerS = lerp(me.steerS || 0, hitNow || spinning ? 0 : steerIn, 1 - Math.exp(-16 * dt));
+    // LOOK: the kart's visual turn builds up over ~0.35s, so frames change gradually
     let target, rate;
     if (spinning) { target = Math.sin(now / 90); rate = 12; me.x += Math.sin(now / 70) * dt * 0.9; }
     else if (me.drift) { me.driftT += dt; target = me.drift * (0.8 + 0.3 * steerIn * me.drift); rate = 6; }
-    else { target = hitNow ? 0 : steerIn * 0.9; rate = zone === 'ice' ? 1.4 : Math.abs(target) > Math.abs(me.yaw || 0) ? 2.6 : 4.5; }
+    else { target = hitNow ? 0 : steerIn * 0.9; rate = Math.abs(target) > Math.abs(me.yaw || 0) ? 3 : 5; }
     me.yaw = lerp(me.yaw || 0, target, 1 - Math.exp(-rate * dt));
     if (!air) {
-      // sideways movement follows the kart's heading, scaled by speed
-      const latTarget = me.drift ? (me.yaw * 0.75 + me.drift * 0.15) * grip : me.yaw * 2.2 * grip;
-      me.sv = zone === 'ice' ? lerp(me.sv || 0, latTarget, 1 - Math.exp(-1.5 * dt)) : latTarget;
-      me.x += me.sv * dt;
-      me.x -= dt * 2.1 * grip * sp * seg.curve * CENTRIFUGAL * (zone === 'ice' ? 1.8 : me.drift ? 0.55 : 1);
-      if (me.drift) me.speed *= 1 - 0.12 * dt;
+      const dx = dt * 2.1 * grip;
+      let lat;
+      if (me.drift) lat = (me.drift * 0.35 + me.steerS * 0.45) * dx;   // drift: kart holds a tight line, steer adjusts it
+      else lat = me.steerS * dx;
+      if (zone === 'ice') { me.sv = lerp(me.sv || 0, lat / dt, 1 - Math.exp(-1.6 * dt)); me.x += me.sv * dt; }
+      else { me.sv = lat / dt; me.x += lat; }
+      me.x -= dx * sp * seg.curve * CENTRIFUGAL * (zone === 'ice' ? 1.8 : me.drift ? 0.35 : 1);
+      if (me.drift) me.speed *= 1 - 0.08 * dt;
     }
 
     const boosting = now < me.boostUntil;
@@ -1214,7 +1218,7 @@
     shake = Math.max(0, shake - dt);
     flash = Math.max(0, flash - dt * 1.6);
     fovK = lerp(fovK, inGame() && now < me.boostUntil ? 1 : 0, 1 - Math.exp(-4 * dt));
-    camXw = lerp(camXw, me.x, 1 - Math.exp(-7 * dt));   // камера мягко догоняет карт
+    camXw = lerp(camXw, me.x, 1 - Math.exp(-11 * dt));   // камера мягко догоняет карт
 
     if (online && inGame() && now - lastSend > 50) {
       lastSend = now;
