@@ -33,3 +33,15 @@ Then open http://localhost:8000
 - `js/tracks.js`: the 8 tracks (layout, zones, obstacles, EASY/HARD, textures, backdrops, minimap)
 - `js/game.js`: 2.5D renderer, physics (steering, drift, jumps), HUD, lobby, sync
 - `js/net.js`: the two-player connection
+
+## Двое (`duo/`): level checks
+
+Levels 16–29 come with scripted runs: a bot plays each level with both characters, through the real `levels.js` and `game.js` in Node (no browser), and must reach both doors with every gem and the secret, without a single fall. Each level is played at 60, 30 and 144 fps and six more times with random key delays of up to 4 frames.
+
+```
+node duo/tests/run.js            # all scripted levels
+node duo/tests/run.js sawmill    # one level
+node duo/tests/render_smoke.js   # every level through the renderer, looking for errors
+```
+
+Medium: 16 Piggyback, 17 Thin Ice, 18 Ferry, 19 Mirror Hall, 20 Post Office, 21 Swap Meet, 22 Cable Car. Hard: 23 Shadow Ladder, 24 Sawmill, 25 Crawlspace, 26 Gravity Well, 27 Parcel, 28 Pistons, 29 Both of Us.

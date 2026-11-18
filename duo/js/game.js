@@ -55,9 +55,9 @@
   function inputFor(role) {
     // one keyboard: Ember = WASD, Tide = arrows. Online: either set drives your character.
     const set = net === 'local'
-      ? (role === 'ember' ? { l: ['KeyA'], r: ['KeyD'], j: ['KeyW'], a: ['KeyS'] } : { l: ['ArrowLeft'], r: ['ArrowRight'], j: ['ArrowUp'], a: ['ArrowDown'] })
-      : { l: ['KeyA', 'ArrowLeft'], r: ['KeyD', 'ArrowRight'], j: ['KeyW', 'ArrowUp', 'Space'], a: ['KeyS', 'ArrowDown', 'KeyE'] };
-    return { left: any(set.l), right: any(set.r), jumpHeld: any(set.j), jump: tap(set.j), action: tap(set.a), actHeld: any(set.a), up: any(set.j) };
+      ? (role === 'ember' ? { l: ['KeyA'], r: ['KeyD'], j: ['KeyW'], a: ['KeyS'], h: ['KeyQ'] } : { l: ['ArrowLeft'], r: ['ArrowRight'], j: ['ArrowUp'], a: ['ArrowDown'], h: ['ShiftRight', 'Enter'] })
+      : { l: ['KeyA', 'ArrowLeft'], r: ['KeyD', 'ArrowRight'], j: ['KeyW', 'ArrowUp', 'Space'], a: ['KeyS', 'ArrowDown', 'KeyE'], h: ['KeyF', 'KeyQ'] };
+    return { left: any(set.l), right: any(set.r), jumpHeld: any(set.j), jump: tap(set.j), hand: tap(set.h), action: tap(set.a), actHeld: any(set.a), up: any(set.j) };
   }
 
   // ---------------------------------------------------------------- level
@@ -66,7 +66,7 @@
     const tiles = def.map.map((r) => r.split(''));
     const lv = {
       i, def, tiles, gems: [], crates: [], springs: [], pads: [], stones: [], plates: [], levers: [], fans: [], portals: [],
-      gates: [], movers: [], doors: {}, starts: {}, frozen: new Map(), melt: new Map(), sig: {},
+      gates: [], movers: [], saws: [], doors: {}, starts: {}, frozen: new Map(), melt: new Map(), sig: {},
       t: 0, deaths: (L && L.i === i ? L.deaths : 0), dead: 0, won: false, fx: [], dirty: true,
       tether: def.flags.tether || 0, rising: def.flags.rising || null, gooY: ROWS + 1, note: def.note, noteT: 6,
     };
@@ -95,6 +95,7 @@
       if (o.type === 'gate') lv.gates.push(Object.assign({ open: 0 }, o));
       if (o.type === 'mover') lv.movers.push(Object.assign({ t: 0, px: o.x, py: o.y }, o));
       if (o.type === 'fan') lv.fans.push({ c: o.x, r: o.y, by: o.by });
+      if (o.type === 'saw') lv.saws.push(Object.assign({ r: 0.42, phase: 0 }, o));
     }
     // the wind column above each fan reaches up to the first solid tile
     for (const f of lv.fans) { let r = f.r - 1; while (r > 0 && tiles[r][f.c] !== '#') r--; f.top = r + 1; }
@@ -124,8 +125,8 @@
     $('lvNote').classList.remove('fade');
     clearTimeout(noteTimer); noteTimer = setTimeout(() => $('lvNote').classList.add('fade'), 6000);
     $('keysHint').innerHTML = net === 'local'
-      ? '<span class="ember-ink">She</span> <kbd>A</kbd><kbd>D</kbd> <kbd>W</kbd> jump <kbd>S</kbd> act · <span class="tide-ink">He</span> <kbd>←</kbd><kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> (hold: crouch, she jumps off his hands) · <kbd>R</kbd>'
-      : '<kbd>A</kbd><kbd>D</kbd> move · <kbd>W</kbd> jump · <kbd>S</kbd> act' + (myRole === 'tide' ? ' (hold: crouch for her)' : '') + ' · <kbd>R</kbd> restart · <kbd>1</kbd>–<kbd>4</kbd>';
+      ? '<span class="ember-ink">She</span> <kbd>A</kbd><kbd>D</kbd> <kbd>W</kbd> jump <kbd>S</kbd> act <kbd>Q</kbd> hand · <span class="tide-ink">He</span> <kbd>←</kbd><kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd> hand · hold down: dig in · <kbd>R</kbd>'
+      : '<kbd>A</kbd><kbd>D</kbd> move · <kbd>W</kbd> jump · <kbd>S</kbd> act · <kbd>F</kbd> hold hand (hold <kbd>S</kbd>: dig in)' + (myRole === 'tide' ? ' (hold: crouch for her)' : '') + ' · <kbd>R</kbd> restart · <kbd>1</kbd>–<kbd>4</kbd>';
     if (net === 'online') Net.send({ t: 'where', v: 'play' });
   }
   let noteTimer = 0;
@@ -143,6 +144,9 @@
   const tileAt = (c, r) => (r < 0 || r >= ROWS || c < 0 || c >= COLS ? '#' : L.tiles[r][c]);
   const isLiquid = (ch) => ch === 'L' || ch === 'W' || ch === 'G';
   const frozen = (c, r) => (L.frozen.get(c + ',' + r) || 0) > L.t;
+  // auto movers and saws swing back and forth on the level clock (same on both screens)
+  const wave = (period, phase = 0) => (1 - Math.cos((L.t / period + phase) * Math.PI * 2)) / 2;
+  function sawPos(sw) { const k = wave(sw.period, sw.phase); return { x: sw.x + sw.dx * k, y: sw.y + sw.dy * k }; }
   function gateRect(g) { return { x: g.x, y: g.y, w: g.w, h: Math.max(0.12, g.h * (1 - 0.94 * g.open)) }; }
   function moverRect(m) { return { x: m.x + m.dx * m.t, y: m.y + m.dy * m.t, w: m.w, h: m.h }; }
   function solids(l, t, r, b, skipCrate) {
@@ -161,20 +165,24 @@
     return out;
   }
   const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  // for collisions: touching is not overlapping (rounding after a flip or a push leaves boxes 1e-15 inside each other,
+  // and the sideways pass would then shove you through a whole tile)
+  const EPS = 1e-6;
+  const hits = (a, b) => a.x < b.x + b.w - EPS && a.x + a.w > b.x + EPS && a.y < b.y + b.h - EPS && a.y + a.h > b.y + EPS;
   const boxOf = (p) => ({ x: p.x - PW / 2, y: p.g > 0 ? p.y - PH : p.y, w: PW, h: PH });
   const center = (p) => ({ x: p.x, y: p.g > 0 ? p.y - PH / 2 : p.y + PH / 2 });
 
   function sweep(box, dx, dy, rects, onHitX) {
     let hitDown = false, hitUp = false, hitX = 0;
     box.x += dx;
-    for (const r of rects) if (overlap(box, r)) {
+    for (const r of rects) if (hits(box, r)) {
       if (dx > 0) box.x = r.x - box.w; else if (dx < 0) box.x = r.x + r.w;
       hitX = Math.sign(dx);
       if (onHitX) onHitX(r, hitX);
     }
     box.y += dy;
     let standOn = null;
-    for (const r of rects) if (overlap(box, r)) {
+    for (const r of rects) if (hits(box, r)) {
       if (dy > 0) { box.y = r.y - box.h; hitDown = true; standOn = r; } else if (dy < 0) { box.y = r.y + r.h; hitUp = true; standOn = r; }
     }
     return { hitDown, hitUp, hitX, standOn };
@@ -207,7 +215,8 @@
     for (const g of L.gates) g.open = approach(g.open, isOn(g.by) ? 1 : 0, dt * 1.6);
     for (const m of L.movers) {
       const before = moverRect(m);
-      m.t = approach(m.t, isOn(m.by) ? 1 : 0, dt * (4 / Math.max(1, Math.hypot(m.dx, m.dy))));
+      if (m.auto) m.t = wave(m.auto, m.phase);
+      else m.t = approach(m.t, isOn(m.by) ? 1 : 0, dt * (4 / Math.max(1, Math.hypot(m.dx, m.dy))));
       const after = moverRect(m);
       const ddx = after.x - before.x, ddy = after.y - before.y;
       if (ddx || ddy) carry(before, ddx, ddy);
@@ -234,11 +243,22 @@
   // ---------------------------------------------------------------- player physics
   function stepPlayer(p, inp, dt) {
     if (!p.alive) return;
-    const target = ((inp.right ? 1 : 0) - (inp.left ? 1 : 0)) * RUN;
+    if (inp.hand) toggleHand(p, true);
+    let target = ((inp.right ? 1 : 0) - (inp.left ? 1 : 0)) * RUN;
+    // holding hands: the leader drags the other one along, unless they dig in (hold down)
+    p.resist = false;
+    const lead = L.hand && L.hand !== p.role ? partnerOf(p) : null;
+    if (lead && lead.alive) {
+      const d = lead.x - p.x;
+      if (Math.abs(d) > 2.4 || Math.abs(lead.y - p.y) > 2.2) breakHand(true, inp.actHeld);
+      else if (inp.actHeld && p.onGround) { p.resist = true; target = 0; }
+      else if (Math.abs(d) > 0.8 && !target) target = Math.sign(d) * RUN * Math.min(1.1, (Math.abs(d) - 0.6) * 1.6);
+    }
     if (target) p.face = Math.sign(target);
     p.vx = approach(p.vx, target, (p.onGround ? 70 : 42) * dt);
+    if (p.resist) p.vx = 0;
     // he crouches (hold act, standing still) so she can jump off his hands
-    p.crouch = p.role === 'tide' && p.onGround && inp.actHeld && Math.abs(p.vx) < 0.5;
+    p.crouch = p.role === 'tide' && !p.resist && p.onGround && inp.actHeld && Math.abs(p.vx) < 0.5;
     if (p.crouch) p.vx = 0;
     if (inp.jump) p.jumpBuf = BUFFER;
     p.jumpBuf -= dt; p.coyote -= dt; p.portalCd -= dt; p.padCd -= dt;
@@ -308,8 +328,9 @@
       const lr = r === 0 ? { x: col, y: r, w: 1, h: 1 - LIQ } : { x: col, y: r + LIQ, w: 1, h: 1 - LIQ };
       if (overlap(probe, lr)) return die(p, ch);
     }
+    for (const sw of L.saws) { const q = sawPos(sw); if (Math.hypot(q.x - c.x, q.y - c.y) < sw.r + 0.3) return die(p, 'S'); }
     if (L.rising && box.y + box.h > L.gooY + 0.2) return die(p, 'G');
-    if (p.y > ROWS + 2 || p.y < -3) return die(p, 'G');
+    if (p.y > ROWS + 2 || p.y < -3 || p.x < -1 || p.x > COLS + 1) return die(p, 'G');
 
     // gems
     L.gems.forEach((gm, i) => {
@@ -370,6 +391,23 @@
       if (cells.length) { freeze(cells, true); return; }
     }
     if (q && q.alive && Math.abs(q.x - p.x) < 1.3 && Math.abs(center(q).y - c.y) < 0.8) highFive(true);
+  }
+  function toggleHand(p, send) {
+    const q = partnerOf(p);
+    if (L.hand) { L.hand = null; hint('Hands let go'); }
+    else if (q && q.alive && Math.abs(q.x - p.x) < 1.8 && Math.abs(center(q).y - center(p).y) < 0.9) {
+      L.hand = p.role; ring((p.x + q.x) / 2, center(p).y, '#A2452F');
+      hint(`${p.label || ROLE[p.role].name} takes ${q.label || ROLE[q.role].name} by the hand`);
+    } else return;
+    if (send && net === 'online') Net.send({ t: 'hand', v: L.hand });
+  }
+  function breakHand(send, resisted) {
+    if (!L.hand) return;
+    const lead = players[L.hand], q = partnerOf(lead);
+    L.hand = null;
+    if (q) q.emo = { e: resisted ? '😤' : '💔', t: 1.6 };
+    hint(resisted ? `${q.label || ROLE[q.role].name} refused to go!` : 'The hands slipped apart');
+    if (send && net === 'online') Net.send({ t: 'handbreak', r: !!resisted });
   }
   function highFive(send) {
     const e = players.ember, t = players.tide;
@@ -432,9 +470,23 @@
     p.alive = false;
     L.dead = 1.3; L.deaths++;
     scribble(center(p).x, center(p).y);
-    const who = ROLE[p.role].name;
-    hint(cause === 'G' ? `${who} stepped into the shadow` : cause === 'L' ? `${who} slipped into the amber` : `${who} slipped into the blue`);
+    hint(deathText(p.role, cause));
+    taunt(p.role);
     if (net === 'online' && p.local) Net.send({ t: 'die', role: p.role, cause });
+  }
+  function deathText(role, cause) {
+    const who = (players[role] && players[role].label) || ROLE[role].name;
+    return cause === 'G' ? `${who} stepped into the shadow` : cause === 'L' ? `${who} slipped into the amber` : cause === 'S' ? `${who} met the saw` : `${who} slipped into the blue`;
+  }
+  // when Alen messes up, Asya has words for him
+  const TAUNTS = ['EZI GLUKH', 'HAMBAL', 'LOX'];
+  const isAlen = (p) => !!p && /^\s*(alen|ален|алён)/i.test(p.label || '');
+  function taunt(role) {
+    const p = players[role], q = partnerOf(p);
+    if (!p || !q) return;
+    const named = isAlen(players.ember) || isAlen(players.tide);
+    if (named ? !isAlen(p) : role !== 'tide') return;
+    q.say = { text: TAUNTS[(L.deaths * 7 + levelIdx) % 3], t: 2.4 };
   }
   function emote(role, e, send) {
     const p = players[role];
@@ -493,7 +545,7 @@
     const dt = Math.min(0.033, (now - last) / 1000);
     last = now;
     if (screen === 'play' && L && !paused) {
-      if (L.won) { L.arriveT = Math.max(0, (L.arriveT || 0) - dt); for (const k in pressed) delete pressed[k]; render(now / 1000); requestAnimationFrame(tick); return; }
+      if (L.won) { L.arriveT = Math.max(0, (L.arriveT || 0) - dt); kissStep(dt); for (const k in pressed) delete pressed[k]; render(now / 1000); requestAnimationFrame(tick); return; }
       L.t += dt;
       if (L.rising) L.gooY = ROWS + 0.6 - Math.max(0, L.t - L.rising.start) * L.rising.speed;
       updateRemote(now);
@@ -502,6 +554,7 @@
         const p = players[role];
         if (p.local && L.dead <= 0) stepPlayer(p, inputFor(role), dt);
         if (p.emo) { p.emo.t -= dt; if (p.emo.t <= 0) p.emo = null; }
+        if (p.say) { p.say.t -= dt; if (p.say.t <= 0) p.say = null; }
       }
       stepCrates(dt);
       for (const s of L.springs) s.t = Math.max(0, s.t - dt);
@@ -511,7 +564,7 @@
       if (!L.won && L.dead <= 0 && players.ember.inDoor && players.tide.inDoor) {
         if (net === 'local' || isHost) {
           winT += dt;
-          if (winT > 0.35) { L.arriveT = 1.2; win(true); }
+          if (winT > 0.35) win(true);
         }
       } else winT = 0;
       // network
@@ -528,17 +581,32 @@
     requestAnimationFrame(tick);
   }
 
+  // ---------------------------------------------------------------- the kiss after every level
+  const KISS = 2.6;
+  function kissStep(dt) {
+    const e = players.ember, t = players.tide;
+    if (!e || !t) return;
+    for (const p of [e, t]) p.alive = true;
+    if (Math.abs(e.y - t.y) > 0.3 || e.g !== t.g) return;
+    const mid = (e.x + t.x) / 2, side = e.x <= t.x ? -1 : 1;
+    for (const [p, s] of [[e, side], [t, -side]]) {
+      const goal = mid + s * 0.3;
+      p.kissWalk = Math.abs(p.x - goal) > 0.05;
+      p.x = approach(p.x, goal, dt * 4);
+      p.face = -s; p.run += dt * 6;
+    }
+  }
   // ---------------------------------------------------------------- result
   function win(send) {
     if (L.won) return;
     L.won = true;
-    L.arriveT = 1.2;
+    L.arriveT = KISS;
     const gemsE = L.gems.filter((g) => g.kind === 'e'), gemsT = L.gems.filter((g) => g.kind === 't'), sec = L.gems.find((g) => g.kind === 's');
     const allGems = gemsE.every((g) => g.taken) && gemsT.every((g) => g.taken);
     const stars = 1 + (allGems ? 1 : 0) + (L.t <= L.def.par ? 1 : 0);
     const res = { i: levelIdx, time: L.t, deaths: L.deaths, stars, gems: [gemsE.filter((g) => g.taken).length + gemsT.filter((g) => g.taken).length, gemsE.length + gemsT.length], secret: sec ? sec.taken : null };
     if (send && net === 'online') Net.send({ t: 'win', res });
-    setTimeout(() => showResult(res), 1300);
+    setTimeout(() => showResult(res), KISS * 1000 + 300);
   }
   function showResult(res) {
     screen = 'result';
@@ -794,8 +862,16 @@
     for (const g of L.gates) drawSlab(gateRect(g), '#5B5650', paintAt, g.by, true);
     for (const m of L.movers) drawSlab(moverRect(m), '#8A8F94', paintAt, m.by, false);
     for (const cr of L.crates) drawCrate(cr, paintAt);
+    for (const sw of L.saws) drawSaw(sw, t);
     L.gems.forEach((gm) => { if (!gm.taken) drawGem(gm, t); });
     if (L.tether) drawRope();
+    if (L.hand && players.ember && players.tide && !L.won) {
+      const a = center(players.ember), b = center(players.tide), hy = (y) => y + 0.05;
+      ctx.strokeStyle = '#A2452F'; ctx.lineWidth = 3 * DPR; ctx.lineCap = 'round'; ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.moveTo(X(a.x), Y(hy(a.y))); ctx.quadraticCurveTo(X((a.x + b.x) / 2), Y(Math.max(a.y, b.y) + 0.35), X(b.x), Y(hy(b.y))); ctx.stroke();
+      ctx.font = `${Math.round(K * 0.3)}px serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#A2452F';
+      ctx.fillText('♥', X((a.x + b.x) / 2), Y(Math.max(a.y, b.y) + 0.25)); ctx.globalAlpha = 1;
+    }
     for (const role of ['tide', 'ember']) if (players[role]) drawFigure(players[role], t);
     if (L.rising) drawGoo(t);
     drawFx(t);
@@ -813,6 +889,16 @@
     if (gate) { pencil(0.8, 0.4); for (let k = 0.3; k < r.w; k += 0.35) { ctx.beginPath(); ctx.moveTo(x + k * K, y + 2); ctx.lineTo(x + k * K, y + h - 2); ctx.stroke(); } }
     if (by) by.forEach((id, i) => { ctx.globalAlpha = 1; ctx.fillStyle = SIG_COL[id] || GRAPHITE; ctx.beginPath(); ctx.arc(x + w / 2 + (i - (by.length - 1) / 2) * K * 0.3, y + Math.min(h, K) * 0.5, K * 0.09, 0, 7); ctx.fill(); });
     ctx.globalAlpha = 1;
+  }
+  function drawSaw(sw, t) {
+    const q = sawPos(sw), cx = X(q.x), cy = Y(q.y), R = sw.r * K, n = 10, rot = t * 9;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+    ctx.beginPath();
+    for (let i = 0; i < n * 2; i++) { const a = (i / (n * 2)) * Math.PI * 2, rr = i % 2 ? R * 0.78 : R * 1.08; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath();
+    wash('#A9ADB2', 0.95); ctx.fill(); pencil(1.4, 0.9); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.22, 0, 7); wash('#A2452F', 0.9); ctx.fill(); pencil(1, 0.8); ctx.stroke();
+    ctx.restore(); ctx.globalAlpha = 1;
   }
   function drawCrate(cr, paintAt) {
     const x = X(cr.x), y = Y(cr.y);
@@ -964,7 +1050,7 @@
   // which frame of the sheet fits what the character is doing right now
   function poseOf(p) {
     if (!p.alive) return ['hurt', 'F'];
-    if (L && L.won) return ['arrive', 'F'];
+    if (L && L.won) return p.kissWalk ? ['walk' + (1 + (Math.floor(p.run) % 4)), 'S'] : ['five', 'S'];
     if (p.fiveT > 0) return ['five', 'S'];
     if (p.crouch || p.boostT > 0) return ['boost', 'S'];
     if (!p.onGround) {
@@ -988,7 +1074,7 @@
   // the characters from the sheet, drawn through their own rig
   function drawFigure(p, t) {
     const R = ROLE[p.role];
-    const [pose, view] = p.local || !p.pz ? poseOf(p) : p.pz.split('|');
+    const [pose, view] = p.local || !p.pz || L.won ? poseOf(p) : p.pz.split('|');
     const fx = X(p.x), fy = Y(p.y);
     const alpha = p.alive ? 1 : Math.max(0, (L.dead || 0) / 1.3);
     if (p.onGround && p.alive) {
@@ -1003,7 +1089,20 @@
     ctx.font = `600 ${Math.round(K * 0.22)}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center';
     ctx.fillText((p.label || R.name).toUpperCase(), fx, ny);
     if (p.emo) { ctx.globalAlpha = Math.min(1, p.emo.t * 2); ctx.font = `${Math.round(K * 0.6)}px serif`; ctx.fillText(p.emo.e, fx, ny - K * 0.3); }
-    if (L.won && (L.arriveT || 0) > 0) { ctx.globalAlpha = Math.min(1, L.arriveT); ctx.fillStyle = '#A2452F'; ctx.font = `${Math.round(K * 0.5)}px serif`; ctx.fillText('♥', (X(players.ember.x) + X(players.tide.x)) / 2, ny - K * 0.4); }
+    if (p.say) {
+      ctx.globalAlpha = Math.min(1, p.say.t * 3);
+      ctx.font = `700 ${Math.round(K * 0.34)}px "IBM Plex Mono", monospace`;
+      const tw = ctx.measureText(p.say.text).width, bw = tw + K * 0.4, bh = K * 0.55, by = ny - K * 0.95;
+      ctx.fillStyle = '#FFF8EC'; ctx.strokeStyle = GRAPHITE; ctx.lineWidth = 2 * DPR;
+      ctx.beginPath(); ctx.roundRect(fx - bw / 2, by - bh / 2, bw, bh, K * 0.14); ctx.moveTo(fx - K * 0.1, by + bh / 2); ctx.lineTo(fx, by + bh / 2 + K * 0.2); ctx.lineTo(fx + K * 0.1, by + bh / 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#A2452F'; ctx.textBaseline = 'middle'; ctx.fillText(p.say.text, fx, by); ctx.textBaseline = 'alphabetic';
+    }
+    if (L.won && (L.arriveT || 0) > 0 && p.role === 'ember') {
+      const e = players.ember, q = players.tide, mx = (X(e.x) + X(q.x)) / 2, k = KISS - L.arriveT;
+      ctx.globalAlpha = Math.min(1, L.arriveT); ctx.fillStyle = '#A2452F';
+      for (let i = 0; i < 5; i++) { const a = (k * 0.9 + i * 0.37) % 1.6; ctx.font = `${Math.round(K * (0.3 + 0.15 * (i % 3)))}px serif`; ctx.fillText('♥', mx + Math.sin(i * 2.1 + k * 2) * K * 0.6, ny - K * 0.2 - a * K * 1.2); }
+      if (!e.kissWalk && !q.kissWalk) { ctx.font = `${Math.round(K * 0.6)}px serif`; ctx.fillText('💋', mx, ny + K * 0.35); }
+    }
     ctx.globalAlpha = 1;
   }
   function shade(hex, t) {
@@ -1165,11 +1264,13 @@
       case 'melt': if (L) meltIce(m.c, m.r, false); break;
       case 'freeze': if (L) freeze(m.cells, false); break;
       case 'swap': if (L) { const me = players[myRole]; me.x = m.x; me.y = m.y; me.g = m.g; for (const s of L.stones) ring(s.c + 0.5, s.r + 0.5, '#7A5A8A'); } break;
-      case 'die': if (L && L.dead <= 0) { const q = players[m.role]; if (q) { q.alive = false; } L.dead = 1.3; L.deaths++; if (q) scribble(center(q).x, center(q).y); hint(`${ROLE[m.role].name} ${m.cause === 'G' ? 'stepped into the shadow' : m.cause === 'L' ? 'slipped into the amber' : 'slipped into the blue'}`); } break;
+      case 'die': if (L && L.dead <= 0) { const q = players[m.role]; if (q) { q.alive = false; } L.dead = 1.3; L.deaths++; if (q) scribble(center(q).x, center(q).y); hint(deathText(m.role, m.cause)); taunt(m.role); } break;
       case 'restart': if (L) restartLevel(false); break;
-      case 'win': if (L) { L.won = true; L.arriveT = 1.2; setTimeout(() => showResult(m.res), 1300); } break;
+      case 'win': if (L && !L.won) { L.won = true; L.arriveT = KISS; setTimeout(() => showResult(m.res), KISS * 1000 + 300); } break;
       case 'emo': emote(myRole === 'ember' ? 'tide' : 'ember', m.e, false); break;
       case 'five': if (L) highFive(false); break;
+      case 'hand': if (L) { L.hand = m.v; if (m.v) ring(players.ember.x, center(players.ember).y, '#A2452F'); hint(m.v ? 'Holding hands' : 'Hands let go'); } break;
+      case 'handbreak': if (L) breakHand(false, m.r); break;
       case 'full': hint('That room already has two players'); goMenu(); break;
     }
   });
